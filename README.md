@@ -1,10 +1,10 @@
 ReadMe is from user sakibc with my addition at the end
 
-# Prusa i3 MK2 Firmware for RAMPS 1.4
+# Prusa i3 MK2.5/3 Firmware for RAMPS 1.4
 
 For when you want the best for less!
 
-This is the Prusa i3 MK2 Firmware v3.1.0 modified to run on RAMPS. The main reason to run this firmware would be if you have a MK42 heatbed you would like to use with RAMPS. Everything hopefully works as you'd expect, but please configure/calibrate your printer before using this!
+This is the Prusa i3 MK2.5/MK3 Firmware v3.4.0-RC1 (#1170) modified to run on RAMPS. The main reason to run this firmware would be if you have a MK42 heatbed you would like to use with RAMPS. Everything hopefully works as you'd expect, but please configure/calibrate your printer before using this!
 
 ## Added/Backported from Marlin 1.1.x
 * RAMPS 1.4 support, with potential for more boards to be easily added.
@@ -19,4 +19,7 @@ This is the Prusa i3 MK2 Firmware v3.1.0 modified to run on RAMPS. The main reas
 The config file has also been modified for my printer, so before running please set the steps/mm and motor/endstop inverting as necessary. Happy printing!
 
 ## Added
-* filament sensor
+* filament sensor (still in progress)
+
+## Needs to be added
+* Power panic (UVLO) feature
