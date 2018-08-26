@@ -177,4 +177,3 @@ void mesh_bed_leveling::upsample_3x3()
 #endif
 
 #endif  // MESH_BED_LEVELING
-

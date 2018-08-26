@@ -4,28 +4,49 @@
 #include "ultralcd.h"
 #include "ConfigurationStore.h"
 #include "Configuration_prusa.h"
-#include "Configuration_adv.h"
 
 #ifdef MESH_BED_LEVELING
 #include "mesh_bed_leveling.h"
 #endif
 
-#ifdef HAVE_TMC2130
-  #include "stepper_indirection.h"
-#endif
+#ifdef DEBUG_EEPROM_WRITE
+#define EEPROM_WRITE_VAR(pos, value) _EEPROM_writeData(pos, (uint8_t*)&value, sizeof(value), #value)
+#else //DEBUG_EEPROM_WRITE
+#define EEPROM_WRITE_VAR(pos, value) _EEPROM_writeData(pos, (uint8_t*)&value, sizeof(value), 0)
+#endif //DEBUG_EEPROM_WRITE
+void _EEPROM_writeData(int &pos, uint8_t* value, uint8_t size, char* name)
+{
+#ifdef DEBUG_EEPROM_WRITE
+	printf_P(PSTR("EEPROM_WRITE_VAR addr=0x%04x size=0x%02hhx name=%s\n"), pos, size, name);
+#endif //DEBUG_EEPROM_WRITE
+	while (size--) {
+		uint8_t * const p = (uint8_t * const)pos;
+		uint8_t v = *value;
+		// EEPROM has only ~100,000 write cycles,
+		// so only write bytes that have changed!
+		if (v != eeprom_read_byte(p)) {
+			eeprom_write_byte(p, v);
+			if (eeprom_read_byte(p) != v) {
+				SERIAL_ECHOLNPGM("EEPROM Error");
+				return;
+			}
+		}
+		pos++;
+		value++;
+	};
 
-void _EEPROM_writeData(int &pos, uint8_t* value, uint8_t size)
-{
-    do
-    {
-        eeprom_write_byte((unsigned char*)pos, *value);
-        pos++;
-        value++;
-    }while(--size);
 }
-#define EEPROM_WRITE_VAR(pos, value) _EEPROM_writeData(pos, (uint8_t*)&value, sizeof(value))
-void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
+
+#ifdef DEBUG_EEPROM_READ
+#define EEPROM_READ_VAR(pos, value) _EEPROM_readData(pos, (uint8_t*)&value, sizeof(value), #value)
+#else //DEBUG_EEPROM_READ
+#define EEPROM_READ_VAR(pos, value) _EEPROM_readData(pos, (uint8_t*)&value, sizeof(value), 0)
+#endif //DEBUG_EEPROM_READ
+void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size, char* name)
 {
+#ifdef DEBUG_EEPROM_READ
+	printf_P(PSTR("EEPROM_READ_VAR addr=0x%04x size=0x%02hhx name=%s\n"), pos, size, name);
+#endif //DEBUG_EEPROM_READ
     do
     {
         *value = eeprom_read_byte((unsigned char*)pos);
@@ -33,83 +54,26 @@ void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
         value++;
     }while(--size);
 }
-#define EEPROM_READ_VAR(pos, value) _EEPROM_readData(pos, (uint8_t*)&value, sizeof(value))
+
 //======================================================================================
-
-/**
- *  EEPROM Layout:
- *  020 version
- *  024 axis_steps_per_unit
- *  040 max_feedrate
- *  056 max_acceleration_units_per_sq_second
- *  072 acceleration
- *  076 retract_acceleration
- *  080 minimumfeedrate
- *  084 mintravelfeedrate
- *  088 minsegmenttime
- *  092 max_jerk[X_AXIS]
- *  096 max_jerk[Y_AXIS]
- *  100 max_jerk[Z_AXIS]
- *  104 max_jerk[E_AXIS]
- *  108 add_homing
- *  120 zprobe_zoffset
- *  124 Kp
- *  128 Ki
- *  132 Kd
- *  136 bedKp
- *  140 bedKi
- *  144 bedKd
- *  148 lcd_contrast
- *  150 autoretract_enabled
- *  151 retract_length
- *  155 retract_feedrate
- *  159 retract_zlift
- *  163 retract_recover_length
- *  167 retract_recover_feedrate
- *  171 volumetric_enabled
- *  172 filament_size
- * 
- * HAVE_TMC2130:
- *  176 Stepper X current
- *  178 Stepper Y current
- *  180 Stepper Z current
- *  182 Stepper X2 current
- *  184 Stepper Y2 current
- *  186 Stepper Z2 current
- *  188 Stepper E0 current
- *  190 Stepper E1 current
- *  192 Stepper E2 current
- *  194 Stepper E3 current
- *  196 Stepper E4 current
- */
-
-
 #define EEPROM_OFFSET 20
-
-
 // IMPORTANT:  Whenever there are changes made to the variables stored in EEPROM
 // in the functions below, also increment the version number. This makes sure that
 // the default values are used whenever there is a change to the data, to prevent
 // wrong data being written to the variables.
 // ALSO:  always make sure the variables in the Store and retrieve sections are in the same order.
 
-#ifdef SNMM
-	#define EEPROM_VERSION "M1"
-#else
-	#define EEPROM_VERSION "V1"
-#endif 
-
-
+#define EEPROM_VERSION "V2"
 
 #ifdef EEPROM_SETTINGS
-void Config_StoreSettings() 
+void Config_StoreSettings(uint16_t offset) 
 {
   char ver[4]= "000";
-  int i=EEPROM_OFFSET;
+  int i = offset;
   EEPROM_WRITE_VAR(i,ver); // invalidate data first 
   EEPROM_WRITE_VAR(i,axis_steps_per_unit);
-  EEPROM_WRITE_VAR(i,max_feedrate);  
-  EEPROM_WRITE_VAR(i,max_acceleration_units_per_sq_second);
+  EEPROM_WRITE_VAR(i,max_feedrate_normal);
+  EEPROM_WRITE_VAR(i,max_acceleration_units_per_sq_second_normal);
   EEPROM_WRITE_VAR(i,acceleration);
   EEPROM_WRITE_VAR(i,retract_acceleration);
   EEPROM_WRITE_VAR(i,minimumfeedrate);
@@ -120,13 +84,6 @@ void Config_StoreSettings()
   EEPROM_WRITE_VAR(i,max_jerk[Z_AXIS]);
   EEPROM_WRITE_VAR(i,max_jerk[E_AXIS]);
   EEPROM_WRITE_VAR(i,add_homing);
-  #ifndef ULTIPANEL
-  int plaPreheatHotendTemp = PLA_PREHEAT_HOTEND_TEMP, plaPreheatHPBTemp = PLA_PREHEAT_HPB_TEMP, plaPreheatFanSpeed = PLA_PREHEAT_FAN_SPEED;
-  int absPreheatHotendTemp = ABS_PREHEAT_HOTEND_TEMP, absPreheatHPBTemp = ABS_PREHEAT_HPB_TEMP, absPreheatFanSpeed = ABS_PREHEAT_FAN_SPEED;
-  
-
-  
-  #endif
 /*  EEPROM_WRITE_VAR(i,plaPreheatHotendTemp);
   EEPROM_WRITE_VAR(i,plaPreheatHPBTemp);
   EEPROM_WRITE_VAR(i,plaPreheatFanSpeed);
@@ -152,10 +109,10 @@ void Config_StoreSettings()
 	EEPROM_WRITE_VAR(i, bedKi);
 	EEPROM_WRITE_VAR(i, bedKd);
   #endif
-  #ifndef DOGLCD
-    int lcd_contrast = 32;
-  #endif
+
+  int lcd_contrast = 0;
   EEPROM_WRITE_VAR(i,lcd_contrast);
+
   #ifdef FWRETRACT
   EEPROM_WRITE_VAR(i,autoretract_enabled);
   EEPROM_WRITE_VAR(i,retract_length);
@@ -181,86 +138,13 @@ void Config_StoreSettings()
   #endif
   #endif
 
-  // Save TMC2130 Configuration, and placeholder values
-  uint16_t val;
-  #if defined(HAVE_TMC2130)
-    #if defined(X_IS_TMC2130)
-      val = stepperX.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(Y_IS_TMC2130)
-      val = stepperY.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(Z_IS_TMC2130)
-      val = stepperZ.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(X2_IS_TMC2130)
-      val = stepperX2.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(Y2_IS_TMC2130)
-      val = stepperY2.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(Z2_IS_TMC2130)
-      val = stepperZ2.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(E0_IS_TMC2130)
-      val = stepperE0.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(E1_IS_TMC2130)
-      val = stepperE1.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(E2_IS_TMC2130)
-      val = stepperE2.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(E3_IS_TMC2130)
-      val = stepperE3.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-    #if defined(E4_IS_TMC2130)
-      val = stepperE4.getCurrent();
-    #else
-      val = 0;
-    #endif
-    EEPROM_WRITE_VAR(i, val);
-  #else
-    val = 0;
-    for (uint8_t q = 11; q--;) EEPROM_WRITE_VAR(i, val);
-  #endif
 
-  /*MYSERIAL.print("Top address used:\n");
-  MYSERIAL.print(i);
-  MYSERIAL.print("\n");
-  */
+
+  EEPROM_WRITE_VAR(i,max_feedrate_silent);
+  EEPROM_WRITE_VAR(i,max_acceleration_units_per_sq_second_silent);
+
   char ver2[4]=EEPROM_VERSION;
-  i=EEPROM_OFFSET;
+  i=offset;
   EEPROM_WRITE_VAR(i,ver2); // validate data
   SERIAL_ECHO_START;
   SERIAL_ECHOLNPGM("Settings Stored");
@@ -269,150 +153,108 @@ void Config_StoreSettings()
 
 
 #ifndef DISABLE_M503
-void Config_PrintSettings()
+void Config_PrintSettings(uint8_t level)
 {  // Always have this function, even with EEPROM_SETTINGS disabled, the current values will be shown
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Steps per unit:");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M92 X",axis_steps_per_unit[X_AXIS]);
-    SERIAL_ECHOPAIR(" Y",axis_steps_per_unit[Y_AXIS]);
-    SERIAL_ECHOPAIR(" Z",axis_steps_per_unit[Z_AXIS]);
-    SERIAL_ECHOPAIR(" E",axis_steps_per_unit[E_AXIS]);
-    SERIAL_ECHOLN("");
-      
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Maximum feedrates (mm/s):");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M203 X", max_feedrate[X_AXIS]);
-    SERIAL_ECHOPAIR(" Y", max_feedrate[Y_AXIS]); 
-    SERIAL_ECHOPAIR(" Z", max_feedrate[Z_AXIS]); 
-    SERIAL_ECHOPAIR(" E", max_feedrate[E_AXIS]);
-    SERIAL_ECHOLN("");
-
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Maximum Acceleration (mm/s2):");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M201 X" ,max_acceleration_units_per_sq_second[X_AXIS] ); 
-    SERIAL_ECHOPAIR(" Y" , max_acceleration_units_per_sq_second[Y_AXIS] ); 
-    SERIAL_ECHOPAIR(" Z" ,max_acceleration_units_per_sq_second[Z_AXIS] );
-    SERIAL_ECHOPAIR(" E" ,max_acceleration_units_per_sq_second[E_AXIS]);
-    SERIAL_ECHOLN("");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Acceleration: S=acceleration, T=retract acceleration");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M204 S",acceleration ); 
-    SERIAL_ECHOPAIR(" T" ,retract_acceleration);
-    SERIAL_ECHOLN("");
-
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Advanced variables: S=Min feedrate (mm/s), T=Min travel feedrate (mm/s), B=minimum segment time (ms), X=maximum XY jerk (mm/s),  Z=maximum Z jerk (mm/s),  E=maximum E jerk (mm/s)");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M205 S",minimumfeedrate ); 
-    SERIAL_ECHOPAIR(" T" ,mintravelfeedrate ); 
-    SERIAL_ECHOPAIR(" B" ,minsegmenttime ); 
-    SERIAL_ECHOPAIR(" X" ,max_jerk[X_AXIS] ); 
-    SERIAL_ECHOPAIR(" Y" ,max_jerk[Y_AXIS] ); 
-    SERIAL_ECHOPAIR(" Z" ,max_jerk[Z_AXIS] ); 
-    SERIAL_ECHOPAIR(" E" ,max_jerk[E_AXIS] ); 
-    SERIAL_ECHOLN(""); 
-
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Home offset (mm):");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("  M206 X",add_homing[X_AXIS] );
-    SERIAL_ECHOPAIR(" Y" ,add_homing[Y_AXIS] );
-    SERIAL_ECHOPAIR(" Z" ,add_homing[Z_AXIS] );
-    SERIAL_ECHOLN("");
+#ifdef TMC2130
+	printf_P(PSTR(
+		"%SSteps per unit:\n%S  M92 X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SMaximum feedrates - normal (mm/s):\n%S  M203 X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SMaximum feedrates - stealth (mm/s):\n%S  M203 X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SMaximum acceleration - normal (mm/s2):\n%S  M201 X%lu Y%lu Z%lu E%lu\n"
+		"%SMaximum acceleration - stealth (mm/s2):\n%S  M201 X%lu Y%lu Z%lu E%lu\n"
+		"%SAcceleration: S=acceleration, T=retract acceleration\n%S  M204 S%.2f T%.2f\n"
+		"%SAdvanced variables: S=Min feedrate (mm/s), T=Min travel feedrate (mm/s), B=minimum segment time (ms), X=maximum XY jerk (mm/s),  Z=maximum Z jerk (mm/s),  E=maximum E jerk (mm/s)\n%S  M205 S%.2f T%.2f B%.2f X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SHome offset (mm):\n%S  M206 X%.2f Y%.2f Z%.2f\n"
+		),
+		echomagic, echomagic, axis_steps_per_unit[X_AXIS], axis_steps_per_unit[Y_AXIS], axis_steps_per_unit[Z_AXIS], axis_steps_per_unit[E_AXIS],
+		echomagic, echomagic, max_feedrate_normal[X_AXIS], max_feedrate_normal[Y_AXIS], max_feedrate_normal[Z_AXIS], max_feedrate_normal[E_AXIS],
+		echomagic, echomagic, max_feedrate_silent[X_AXIS], max_feedrate_silent[Y_AXIS], max_feedrate_silent[Z_AXIS], max_feedrate_silent[E_AXIS],
+		echomagic, echomagic, max_acceleration_units_per_sq_second_normal[X_AXIS], max_acceleration_units_per_sq_second_normal[Y_AXIS], max_acceleration_units_per_sq_second_normal[Z_AXIS], max_acceleration_units_per_sq_second_normal[E_AXIS],
+		echomagic, echomagic, max_acceleration_units_per_sq_second_silent[X_AXIS], max_acceleration_units_per_sq_second_silent[Y_AXIS], max_acceleration_units_per_sq_second_silent[Z_AXIS], max_acceleration_units_per_sq_second_silent[E_AXIS],
+		echomagic, echomagic, acceleration, retract_acceleration,
+		echomagic, echomagic, minimumfeedrate, mintravelfeedrate, minsegmenttime, max_jerk[X_AXIS], max_jerk[Y_AXIS], max_jerk[Z_AXIS], max_jerk[E_AXIS],
+		echomagic, echomagic, add_homing[X_AXIS], add_homing[Y_AXIS], add_homing[Z_AXIS]
+#else //TMC2130
+	printf_P(PSTR(
+		"%SSteps per unit:\n%S  M92 X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SMaximum feedrates (mm/s):\n%S  M203 X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SMaximum acceleration (mm/s2):\n%S  M201 X%lu Y%lu Z%lu E%lu\n"
+		"%SAcceleration: S=acceleration, T=retract acceleration\n%S  M204 S%.2f T%.2f\n"
+		"%SAdvanced variables: S=Min feedrate (mm/s), T=Min travel feedrate (mm/s), B=minimum segment time (ms), X=maximum XY jerk (mm/s),  Z=maximum Z jerk (mm/s),  E=maximum E jerk (mm/s)\n%S  M205 S%.2f T%.2f B%.2f X%.2f Y%.2f Z%.2f E%.2f\n"
+		"%SHome offset (mm):\n%S  M206 X%.2f Y%.2f Z%.2f\n"
+		),
+		echomagic, echomagic, axis_steps_per_unit[X_AXIS], axis_steps_per_unit[Y_AXIS], axis_steps_per_unit[Z_AXIS], axis_steps_per_unit[E_AXIS],
+		echomagic, echomagic, max_feedrate[X_AXIS], max_feedrate[Y_AXIS], max_feedrate[Z_AXIS], max_feedrate[E_AXIS],
+		echomagic, echomagic, max_acceleration_units_per_sq_second[X_AXIS], max_acceleration_units_per_sq_second[Y_AXIS], max_acceleration_units_per_sq_second[Z_AXIS], max_acceleration_units_per_sq_second[E_AXIS],
+		echomagic, echomagic, acceleration, retract_acceleration,
+		echomagic, echomagic, minimumfeedrate, mintravelfeedrate, minsegmenttime, max_jerk[X_AXIS], max_jerk[Y_AXIS], max_jerk[Z_AXIS], max_jerk[E_AXIS],
+		echomagic, echomagic, add_homing[X_AXIS], add_homing[Y_AXIS], add_homing[Z_AXIS]
+#endif //TMC2130
+	);
 #ifdef PIDTEMP
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("PID settings:");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   M301 P",Kp); 
-    SERIAL_ECHOPAIR(" I" ,unscalePID_i(Ki)); 
-    SERIAL_ECHOPAIR(" D" ,unscalePID_d(Kd));
-    SERIAL_ECHOLN(""); 
+	printf_P(PSTR("%SPID settings:\n%S   M301 P%.2f I%.2f D%.2f\n"),
+		echomagic, echomagic, Kp, unscalePID_i(Ki), unscalePID_d(Kd));
 #endif
 #ifdef PIDTEMPBED
-	SERIAL_ECHO_START;
-	SERIAL_ECHOLNPGM("PID heatbed settings:");
-	SERIAL_ECHO_START;
-	SERIAL_ECHOPAIR("   M304 P", bedKp);
-	SERIAL_ECHOPAIR(" I", unscalePID_i(bedKi));
-	SERIAL_ECHOPAIR(" D", unscalePID_d(bedKd));
-	SERIAL_ECHOLN("");
+	printf_P(PSTR("%SPID heatbed settings:\n%S   M304 P%.2f I%.2f D%.2f\n"),
+		echomagic, echomagic, bedKp, unscalePID_i(bedKi), unscalePID_d(bedKd));
 #endif
 #ifdef FWRETRACT
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Retract: S=Length (mm) F:Speed (mm/m) Z: ZLift (mm)");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   M207 S",retract_length); 
-    SERIAL_ECHOPAIR(" F" ,retract_feedrate*60); 
-    SERIAL_ECHOPAIR(" Z" ,retract_zlift);
-    SERIAL_ECHOLN(""); 
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Recover: S=Extra length (mm) F:Speed (mm/m)");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   M208 S",retract_recover_length);
-    SERIAL_ECHOPAIR(" F", retract_recover_feedrate*60);
-	SERIAL_ECHOLN("");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Auto-Retract: S=0 to disable, 1 to interpret extrude-only moves as retracts or recoveries");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   M209 S", (unsigned long)(autoretract_enabled ? 1 : 0));
-    SERIAL_ECHOLN("");
+	printf_P(PSTR(
+		"%SRetract: S=Length (mm) F:Speed (mm/m) Z: ZLift (mm)\n%S   M207 S%.2f F%.2f Z%.2f\n"
+		"%SRecover: S=Extra length (mm) F:Speed (mm/m)\n%S   M208 S%.2f F%.2f\n"
+		"%SAuto-Retract: S=0 to disable, 1 to interpret extrude-only moves as retracts or recoveries\n%S   M209 S%d\n"
+		),
+		echomagic, echomagic, retract_length, retract_feedrate*60, retract_zlift,
+		echomagic, echomagic, retract_recover_length, retract_recover_feedrate*60,
+		echomagic, echomagic, (autoretract_enabled ? 1 : 0)
+	);
 #if EXTRUDERS > 1
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM("Multi-extruder settings:");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   Swap retract length (mm):    ", retract_length_swap);
-    SERIAL_ECHOLN("");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPAIR("   Swap rec. addl. length (mm): ", retract_recover_length_swap);
-    SERIAL_ECHOLN("");
+	printf_P(PSTR("%SMulti-extruder settings:\n%S   Swap retract length (mm):    %.2f\n%S   Swap rec. addl. length (mm): %.2f\n"),
+		echomagic, echomagic, retract_length_swap, echomagic, retract_recover_length_swap);
 #endif
-    SERIAL_ECHO_START;
-    if (volumetric_enabled) {
-        SERIAL_ECHOLNPGM("Filament settings:");
-        SERIAL_ECHO_START;
-        SERIAL_ECHOPAIR("   M200 D", filament_size[0]);
-        SERIAL_ECHOLN(""); 
+	if (volumetric_enabled) {
+		printf_P(PSTR("%SFilament settings:\n%S   M200 D%.2f\n"),
+			echomagic, echomagic, filament_size[0]);
 #if EXTRUDERS > 1
-		SERIAL_ECHO_START;
-        SERIAL_ECHOPAIR("   M200 T1 D", filament_size[1]);
-        SERIAL_ECHOLN(""); 
+		printf_P(PSTR("%S   M200 T1 D%.2f\n"),
+			echomagic, echomagic, filament_size[1]);
 #if EXTRUDERS > 2
-		SERIAL_ECHO_START;
-        SERIAL_ECHOPAIR("   M200 T2 D", filament_size[2]);
-		SERIAL_ECHOLN("");
+		printf_P(PSTR("%S   M200 T1 D%.2f\n"),
+			echomagic, echomagic, filament_size[2]);
 #endif
 #endif
     } else {
-        SERIAL_ECHOLNPGM("Filament settings: Disabled");
+        printf_P(PSTR("%SFilament settings: Disabled\n"), echomagic);
     }
 #endif
+	if (level >= 10) {
+#ifdef LIN_ADVANCE
+		printf_P(PSTR("%SLinear advance settings:\n   M900 K%.2f   E/D = %.2f\n"),
+			echomagic, extruder_advance_k, advance_ed_ratio);
+#endif //LIN_ADVANCE
+	}
 }
 #endif
 
 
 #ifdef EEPROM_SETTINGS
-bool Config_RetrieveSettings()
+bool Config_RetrieveSettings(uint16_t offset)
 {
-    int i=EEPROM_OFFSET;
-	bool previous_settings_retrieved = true; 
+    int i=offset;
+	bool previous_settings_retrieved = true;
     char stored_ver[4];
     char ver[4]=EEPROM_VERSION;
     EEPROM_READ_VAR(i,stored_ver); //read stored version
-
-	//  SERIAL_ECHOLN("Version: [" << ver << "] Stored version: [" << stored_ver << "]");
+    //  SERIAL_ECHOLN("Version: [" << ver << "] Stored version: [" << stored_ver << "]");
     if (strncmp(ver,stored_ver,3) == 0)
     {
         // version number match
         EEPROM_READ_VAR(i,axis_steps_per_unit);
-        EEPROM_READ_VAR(i,max_feedrate);  
-        EEPROM_READ_VAR(i,max_acceleration_units_per_sq_second);
+        EEPROM_READ_VAR(i,max_feedrate_normal);
+        EEPROM_READ_VAR(i,max_acceleration_units_per_sq_second_normal);
         
         // steps per sq second need to be updated to agree with the units per sq second (as they are what is used in the planner)
-		reset_acceleration_rates();
         
         EEPROM_READ_VAR(i,acceleration);
         EEPROM_READ_VAR(i,retract_acceleration);
@@ -423,12 +265,9 @@ bool Config_RetrieveSettings()
         EEPROM_READ_VAR(i,max_jerk[Y_AXIS]);
 		EEPROM_READ_VAR(i,max_jerk[Z_AXIS]);
 		EEPROM_READ_VAR(i,max_jerk[E_AXIS]);
+		if (max_jerk[X_AXIS] > DEFAULT_XJERK) max_jerk[X_AXIS] = DEFAULT_XJERK;
+		if (max_jerk[Y_AXIS] > DEFAULT_YJERK) max_jerk[Y_AXIS] = DEFAULT_YJERK;
         EEPROM_READ_VAR(i,add_homing);
-        #ifndef ULTIPANEL
-        int plaPreheatHotendTemp, plaPreheatHPBTemp, plaPreheatFanSpeed;
-        int absPreheatHotendTemp, absPreheatHPBTemp, absPreheatFanSpeed;
-
-        #endif
 	/*
         EEPROM_READ_VAR(i,plaPreheatHotendTemp);
         EEPROM_READ_VAR(i,plaPreheatHPBTemp);
@@ -452,10 +291,9 @@ bool Config_RetrieveSettings()
 		EEPROM_READ_VAR(i, bedKi);
 		EEPROM_READ_VAR(i, bedKd);
 		#endif
-		#ifndef DOGLCD
-        int lcd_contrast;
-        #endif
-        EEPROM_READ_VAR(i,lcd_contrast);
+
+		int lcd_contrast;
+		EEPROM_READ_VAR(i,lcd_contrast);
 
 		#ifdef FWRETRACT
 		EEPROM_READ_VAR(i,autoretract_enabled);
@@ -481,79 +319,47 @@ bool Config_RetrieveSettings()
 #endif
 #endif
 
-    uint16_t val;
-    #if defined(HAVE_TMC2130)
-      EEPROM_READ_VAR(i, val);
-      #if defined(X_IS_TMC2130)
-        stepperX.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(Y_IS_TMC2130)
-        stepperY.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(Z_IS_TMC2130)
-        stepperZ.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(X2_IS_TMC2130)
-        stepperX2.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(Y2_IS_TMC2130)
-        stepperY2.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(Z2_IS_TMC2130)
-        stepperZ2.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(E0_IS_TMC2130)
-        stepperE0.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(E1_IS_TMC2130)
-        stepperE1.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(E2_IS_TMC2130)
-        stepperE2.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(E3_IS_TMC2130)
-        stepperE3.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-      EEPROM_READ_VAR(i, val);
-      #if defined(E4_IS_TMC2130)
-        stepperE4.setCurrent(val, R_SENSE, HOLD_MULTIPLIER);
-      #endif
-    #else
-      for (uint8_t q = 0; q < 11; q++) EEPROM_READ_VAR(i, val);
-    #endif
+    calculate_extruder_multipliers();
 
-		calculate_volumetric_multipliers();
+        EEPROM_READ_VAR(i,max_feedrate_silent);  
+        EEPROM_READ_VAR(i,max_acceleration_units_per_sq_second_silent);
+
+#ifdef TMC2130
+		for (uint8_t j = X_AXIS; j <= Y_AXIS; j++)
+		{
+			if (max_feedrate_normal[j] > NORMAL_MAX_FEEDRATE_XY)
+				max_feedrate_normal[j] = NORMAL_MAX_FEEDRATE_XY;
+			if (max_feedrate_silent[j] > SILENT_MAX_FEEDRATE_XY)
+				max_feedrate_silent[j] = SILENT_MAX_FEEDRATE_XY;
+			if (max_acceleration_units_per_sq_second_normal[j] > NORMAL_MAX_ACCEL_XY)
+				max_acceleration_units_per_sq_second_normal[j] = NORMAL_MAX_ACCEL_XY;
+			if (max_acceleration_units_per_sq_second_silent[j] > SILENT_MAX_ACCEL_XY)
+				max_acceleration_units_per_sq_second_silent[j] = SILENT_MAX_ACCEL_XY;
+		}
+#endif //TMC2130
+
+		reset_acceleration_rates();
+
 		// Call updatePID (similar to when we have processed M301)
 		updatePID();
-
-		SERIAL_ECHO_START;
+        SERIAL_ECHO_START;
         SERIAL_ECHOLNPGM("Stored settings retrieved");
     }
     else
     {
         Config_ResetDefault();
-
 		//Return false to inform user that eeprom version was changed and firmware is using default hardcoded settings now.
 		//In case that storing to eeprom was not used yet, do not inform user that hardcoded settings are used.
-		if (eeprom_read_byte((uint8_t *)EEPROM_OFFSET) != 0xFF ||
-			eeprom_read_byte((uint8_t *)EEPROM_OFFSET + 1) != 0xFF ||
-			eeprom_read_byte((uint8_t *)EEPROM_OFFSET + 2) != 0xFF) {
+		if (eeprom_read_byte((uint8_t *)offset) != 0xFF ||
+			eeprom_read_byte((uint8_t *)offset + 1) != 0xFF ||
+			eeprom_read_byte((uint8_t *)offset + 2) != 0xFF) {
 			previous_settings_retrieved = false;
 		}
     }
     #ifdef EEPROM_CHITCHAT
       Config_PrintSettings();
     #endif
-	  return previous_settings_retrieved;
+	return previous_settings_retrieved;
 }
 #endif
 
@@ -562,14 +368,18 @@ void Config_ResetDefault()
     float tmp1[]=DEFAULT_AXIS_STEPS_PER_UNIT;
     float tmp2[]=DEFAULT_MAX_FEEDRATE;
     long tmp3[]=DEFAULT_MAX_ACCELERATION;
+    float tmp4[]=DEFAULT_MAX_FEEDRATE_SILENT;
+    long tmp5[]=DEFAULT_MAX_ACCELERATION_SILENT;
     for (short i=0;i<4;i++) 
     {
         axis_steps_per_unit[i]=tmp1[i];  
-        max_feedrate[i]=tmp2[i];  
-        max_acceleration_units_per_sq_second[i]=tmp3[i];
+        max_feedrate_normal[i]=tmp2[i];  
+        max_acceleration_units_per_sq_second_normal[i]=tmp3[i];
+        max_feedrate_silent[i]=tmp4[i];  
+        max_acceleration_units_per_sq_second_silent[i]=tmp5[i];
     }
-    
-    // steps per sq second need to be updated to agree with the units per sq second
+
+	// steps per sq second need to be updated to agree with the units per sq second
     reset_acceleration_rates();
     
     acceleration=DEFAULT_ACCELERATION;
@@ -585,9 +395,6 @@ void Config_ResetDefault()
 
 #ifdef ENABLE_AUTO_BED_LEVELING
     zprobe_zoffset = -Z_PROBE_OFFSET_FROM_EXTRUDER;
-#endif
-#ifdef DOGLCD
-    lcd_contrast = DEFAULT_LCD_CONTRAST;
 #endif
 #ifdef PIDTEMP
     Kp = DEFAULT_Kp;
@@ -625,44 +432,9 @@ void Config_ResetDefault()
 	filament_size[2] = DEFAULT_NOMINAL_FILAMENT_DIA;
 #endif
 #endif
-
-#if defined(HAVE_TMC2130)
-    #if defined(X_IS_TMC2130)
-      stepperX.setCurrent(X_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(Y_IS_TMC2130)
-      stepperY.setCurrent(Y_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(Z_IS_TMC2130)
-      stepperZ.setCurrent(Z_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(X2_IS_TMC2130)
-      stepperX2.setCurrent(X2_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(Y2_IS_TMC2130)
-      stepperY2.setCurrent(Y2_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(Z2_IS_TMC2130)
-      stepperZ2.setCurrent(Z2_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(E0_IS_TMC2130)
-      stepperE0.setCurrent(E0_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(E1_IS_TMC2130)
-      stepperE1.setCurrent(E1_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(E2_IS_TMC2130)
-      stepperE2.setCurrent(E2_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-    #if defined(E3_IS_TMC2130)
-      stepperE3.setCurrent(E3_CURRENT, R_SENSE, HOLD_MULTIPLIER);
-    #endif
-  #endif
-
-	calculate_volumetric_multipliers();
+	calculate_extruder_multipliers();
 
 SERIAL_ECHO_START;
 SERIAL_ECHOLNPGM("Hardcoded Default Settings Loaded");
 
 }
-

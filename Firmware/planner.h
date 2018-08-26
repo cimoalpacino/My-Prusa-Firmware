@@ -40,6 +40,28 @@ enum BlockFlag {
     // If set, the machine will start from a halt at the start of this block,
     // respecting the maximum allowed jerk.
     BLOCK_FLAG_START_FROM_FULL_HALT = 4,
+    // If set, the stepper interrupt expects, that the number of steps to tick will be lower
+    // than 32767, therefore the DDA algorithm may run with 16bit resolution only.
+    // In addition, the stepper routine will not do any end stop checking for higher performance.
+    BLOCK_FLAG_DDA_LOWRES = 8,
+};
+
+union dda_isteps_t
+{
+  int32_t     wide;
+  struct {
+    int16_t   lo;
+    int16_t   hi;
+  };
+};
+
+union dda_usteps_t
+{
+  uint32_t    wide;
+  struct {
+    uint16_t  lo;
+    uint16_t  hi;
+  };
 };
 
 // This struct is used when buffering the setup for each linear movement "nominal" values are as specified in 
@@ -47,8 +69,8 @@ enum BlockFlag {
 typedef struct {
   // Fields used by the bresenham algorithm for tracing the line
   // steps_x.y,z, step_event_count, acceleration_rate, direction_bits and active_extruder are set by plan_buffer_line().
-  long steps_x, steps_y, steps_z, steps_e;  // Step count along each axis
-  unsigned long step_event_count;           // The number of step events required to complete this block
+  dda_isteps_t steps_x, steps_y, steps_z, steps_e;  // Step count along each axis
+  dda_usteps_t step_event_count;            // The number of step events required to complete this block
   long acceleration_rate;                   // The acceleration rate used for acceleration calculation
   unsigned char direction_bits;             // The direction bit set for this block (refers to *_DIRECTION_BIT in config.h)
   unsigned char active_extruder;            // Selects the active extruder
@@ -72,7 +94,7 @@ typedef struct {
   float acceleration;
 
   // Bit flags defined by the BlockFlag enum.
-  bool flag;
+  uint8_t flag;
 
   // Settings for the trapezoid generator (runs inside an interrupt handler).
   // Changing the following values in the planner needs to be synchronized with the interrupt handler by disabling the interrupts.
@@ -88,11 +110,13 @@ typedef struct {
 
   // Pre-calculated division for the calculate_trapezoid_for_block() routine to run faster.
   float speed_factor;
-  
-  #ifdef LIN_ADVANCE
-    bool use_advance_lead;
-    unsigned long abs_adv_steps_multiplier8; // Factorised by 2^8 to avoid float
-  #endif
+    
+#ifdef LIN_ADVANCE
+  bool use_advance_lead;
+  unsigned long abs_adv_steps_multiplier8; // Factorised by 2^8 to avoid float
+#endif
+
+  uint16_t sdlen;
 } block_t;
 
 #ifdef LIN_ADVANCE
@@ -135,9 +159,20 @@ void plan_set_e_position(const float &e);
 void check_axes_activity();
 
 extern unsigned long minsegmenttime;
-extern float max_feedrate[NUM_AXIS]; // set the max speeds
+
+// Use M203 to override by software
+extern float max_feedrate_normal[NUM_AXIS];
+extern float max_feedrate_silent[NUM_AXIS];
+extern float* max_feedrate;
+
+// Use M92 to override by software
 extern float axis_steps_per_unit[NUM_AXIS];
-extern unsigned long max_acceleration_units_per_sq_second[NUM_AXIS]; // Use M201 to override by software
+
+// Use M201 to override by software
+extern unsigned long max_acceleration_units_per_sq_second_normal[NUM_AXIS];
+extern unsigned long max_acceleration_units_per_sq_second_silent[NUM_AXIS];
+extern unsigned long* max_acceleration_units_per_sq_second; 
+
 extern float minimumfeedrate;
 extern float acceleration;         // Normal acceleration mm/s^2  THIS IS THE DEFAULT ACCELERATION for all moves. M204 SXXXX
 extern float retract_acceleration; //  mm/s^2   filament pull-pack and push-forward  while standing still in the other axis M204 TXXXX
@@ -145,6 +180,10 @@ extern float retract_acceleration; //  mm/s^2   filament pull-pack and push-forw
 extern float max_jerk[NUM_AXIS];
 extern float mintravelfeedrate;
 extern unsigned long axis_steps_per_sqr_second[NUM_AXIS];
+
+extern long position[NUM_AXIS];
+extern uint8_t maxlimit_status;
+
 
 #ifdef AUTOTEMP
     extern bool autotemp_enabled;
@@ -157,7 +196,11 @@ extern unsigned long axis_steps_per_sqr_second[NUM_AXIS];
 
 
 extern block_t block_buffer[BLOCK_BUFFER_SIZE];            // A ring buffer for motion instfructions
-extern volatile unsigned char block_buffer_head;           // Index of the next block to be pushed
+// Index of the next block to be pushed into the planner queue.
+extern volatile unsigned char block_buffer_head;
+// Index of the first block in the planner queue.
+// This is the block, which is being currently processed by the stepper routine, 
+// or which is first to be processed by the stepper routine.
 extern volatile unsigned char block_buffer_tail; 
 // Called when the current block is no longer needed. Discards the block and makes the memory
 // available for new blocks.    
@@ -168,7 +211,10 @@ FORCE_INLINE void plan_discard_current_block()
   }
 }
 
-// Gets the current block. Returns NULL if buffer empty
+// Gets the current block. This is the block to be exectuted by the stepper routine.
+// Mark this block as busy, so its velocities and acceperations will be no more recalculated
+// by the planner routine.
+// Returns NULL if buffer empty
 FORCE_INLINE block_t *plan_get_current_block() 
 {
   if (block_buffer_head == block_buffer_tail) { 
@@ -208,6 +254,10 @@ void set_extrude_min_temp(float temp);
 void reset_acceleration_rates();
 #endif
 
+void update_mode_profile();
+
+unsigned char number_of_blocks();
+
 // #define PLANNER_DIAGNOSTICS
 #ifdef PLANNER_DIAGNOSTICS
 // Diagnostic functions to display planner buffer underflow on the display.
@@ -216,3 +266,6 @@ extern uint8_t planner_queue_min();
 extern void planner_queue_min_reset();
 #endif /* PLANNER_DIAGNOSTICS */
 
+extern void planner_add_sd_length(uint16_t sdlen);
+
+extern uint16_t planner_calc_sd_length();

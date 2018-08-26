@@ -811,4 +811,3 @@ uint8_t Sd2Card::readExtMemory(uint8_t mio, uint8_t func,
 }
 
 #endif
-
