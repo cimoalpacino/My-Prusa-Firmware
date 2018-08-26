@@ -6,6 +6,7 @@ GENERAL SETTINGS
 *------------------------------------*/
 
 // Printer revision
+#define PRINTER_TYPE PRINTER_MK2
 #define FILAMENT_SIZE "1_75mm_MK2"
 #define NOZZLE_TYPE "E3Dv6full"
 
@@ -41,9 +42,18 @@ AXIS SETTINGS
 
 
 // Endstop inverting
-const bool X_MIN_ENDSTOP_INVERTING = false; // set to true to invert the logic of the endstop.
-const bool Y_MIN_ENDSTOP_INVERTING = false; // set to true to invert the logic of the endstop.
-const bool Z_MIN_ENDSTOP_INVERTING = false; // set to true to invert the logic of the endstop.
+#define X_MIN_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
+#define Y_MIN_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
+#define Z_MIN_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
+
+// Direction inverting
+#define INVERT_X_DIR 0    // for Mendel set to 0, for Orca set to 1
+#define INVERT_Y_DIR 0    // for Mendel set to 1, for Orca set to 0
+#define INVERT_Z_DIR 0    // for Mendel set to 0, for Orca set to 1
+#define INVERT_E0_DIR 1    // for direct drive extruder v9 set to 1, for geared extruder set to 0
+#define INVERT_E1_DIR 1    // for direct drive extruder v9 set to 1, for geared extruder set to 0
+#define INVERT_E2_DIR 1    // for direct drive extruder v9 set to 1, for geared extruder set to 0
+
 
 // Home position
 #define MANUAL_X_HOME_POS 0
@@ -80,6 +90,10 @@ const bool Z_MIN_ENDSTOP_INVERTING = false; // set to true to invert the logic o
 #define MANUAL_FEEDRATE {3000, 3000, 1000, 100}   // set the speeds for manual moves (mm/min)
 
 #define Z_AXIS_ALWAYS_ON 1
+
+// New XYZ calibration
+//#define NEW_XYZCAL
+
 
 /*------------------------------------
 EXTRUDER SETTINGS
@@ -123,8 +137,6 @@ EXTRUDER SETTINGS
 #define EXTRUDER_AUTO_FAN_TEMPERATURE 50
 #define EXTRUDER_AUTO_FAN_SPEED   255  // == full speed
 
-// Prusa Single extruder multiple material suport
-//#define SNMM
 
 #ifdef SNMM
 //#define BOWDEN_LENGTH	408
@@ -191,7 +203,7 @@ MOTOR CURRENT SETTINGS
 #define DIGIPOT_MOTOR_CURRENT_LOUD {135,135,135,135,135}
 
 // Motor Current settings for RAMBo mini PWM value = MotorCurrentSetting * 255 / range
-#if MOTHERBOARD == 102 || MOTHERBOARD == 302
+#if MOTHERBOARD == BOARD_RAMBO_MINI_1_0 || MOTHERBOARD == BOARD_RAMBO_MINI_1_3
 #define MOTOR_CURRENT_PWM_RANGE 2000
 #define DEFAULT_PWM_MOTOR_CURRENT  {270, 830, 450} // {XY,Z,E}
 #define DEFAULT_PWM_MOTOR_CURRENT_LOUD  {540, 830, 500} // {XY,Z,E}
@@ -284,6 +296,10 @@ BED SETTINGS
 PREHEAT SETTINGS
 *------------------------------------*/
 
+#define FARM_PREHEAT_HOTEND_TEMP 250
+#define FARM_PREHEAT_HPB_TEMP 40
+#define FARM_PREHEAT_FAN_SPEED 0
+
 #define PLA_PREHEAT_HOTEND_TEMP 215
 #define PLA_PREHEAT_HPB_TEMP 55
 #define PLA_PREHEAT_FAN_SPEED 0  
@@ -345,7 +361,7 @@ THERMISTORS SETTINGS
 // 1047 is Pt1000 with 4k7 pullup
 // 1010 is Pt1000 with 1k pullup (non standard)
 // 147 is Pt100 with 4k7 pullup
-// 148 is Pt100 with 4k7 pullup and no PT100 Amplifier (in case type 147 doesn't work)
+// 148 is E3D Pt100 with 4k7 pullup and no PT100 Amplifier on a MiniRambo 1.3a
 // 247 is Pt100 with 4k7 pullup and PT100 Amplifier
 // 110 is Pt100 with 1k pullup (non standard)
 
@@ -387,8 +403,9 @@ THERMISTORS SETTINGS
 #define PINDA_MAX_T 100
 
 #define PING_TIME 60 //time in s
-#define PING_TIME_LONG 600 //10 min; used when length of commands buffer > 0 to avoid false triggering when dealing with long gcodes
-#define PING_ALERT_PERIOD 60 //time in s
+#define PING_TIME_LONG 600 //10 min; used when length of commands buffer > 0 to avoid 0 triggering when dealing with long gcodes
+#define PING_ALLERT_PERIOD 60 //time in s
+
 #define NC_TIME 10 //time in s for periodic important status messages sending which needs reponse from monitoring
 #define NC_BUTTON_LONG_PRESS 15 //time in s
 
@@ -397,13 +414,14 @@ THERMISTORS SETTINGS
 
 #define DEFAULT_PID_TEMP 210
 
-#ifdef SNMM
-#define DEFAULT_RETRACTION 4 //used for PINDA temp calibration and pause print
-#else
-#define DEFAULT_RETRACTION 1 //used for PINDA temp calibration and pause print
-#endif
 
-#define END_FILE_SECTION 10000 //number of bytes from end of file used for checking if file is complete
+#define END_FILE_SECTION 20000 //number of bytes from end of file used for checking if file is complete
+
+// Safety timer
+#define SAFETYTIMER
+#define DEFAULT_SAFETYTIMER_TIME_MINS 30
+
+#define M600_TIMEOUT 600  //seconds
 
 #ifndef SNMM
 #define SUPPORT_VERBOSITY
