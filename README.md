@@ -1,5 +1,3 @@
-ReadMe is from user sakibc with my addition at the end
-
 # Prusa i3 MK2.5/3 Firmware for RAMPS 1.4
 
 For when you want the best for less!
