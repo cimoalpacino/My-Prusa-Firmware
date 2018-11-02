@@ -1,4 +1,4 @@
-# Prusa i3 MK2.5/3 Firmware for RAMPS 1.4
+# Prusa i3 MK2.5/MK3 Firmware for RAMPS 1.4
 
 For when you want the best for less!
 
