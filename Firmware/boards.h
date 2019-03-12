@@ -6,8 +6,8 @@
 #define BOARD_RAMBO_MINI_1_0    200  // Rambo-mini 1.0 - 200 (orig 102)
 #define BOARD_RAMBO_MINI_1_3    203  // Rambo-mini 1.3 - 203 (orig 302)
 
-// Added RAMPS
-#define BOARD_RAMPS_14_EFB      204	 // RAMPS Extruder/Fan/Bed*
+//Added RAMPS board
+#define BOARD_RAMPS_13_EFB      33   // RAMPS 1.3 / 1.4 (Power outputs: Extruder, Fan, Bed)
 
 #define BOARD_EINSY_1_0a        310  // EINSy 1.0a     - 310 (new)
 

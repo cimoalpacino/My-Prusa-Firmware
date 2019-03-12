@@ -7,12 +7,12 @@
 #define STR(x) STR_HELPER(x)
 
 // Firmware version
-#define FW_VERSION "3.4.0-RC1"
-#define FW_COMMIT_NR   1170
+#define FW_VERSION "3.6.0"
+#define FW_COMMIT_NR   2069
 // FW_VERSION_UNKNOWN means this is an unofficial build.
 // The firmware should only be checked into github with this symbol.
-#define FW_DEV_VERSION FW_VERSION_UNKNOWN
-#define FW_REPOSITORY "Unknown"
+#define FW_DEV_VERSION FW_VERSION_RC //FW_VERSION_UNKNOWN
+#define FW_REPOSITORY "Prusa3D" //"Unknown"
 #define FW_VERSION_FULL FW_VERSION "-" STR(FW_COMMIT_NR)
 
 // Debug version has debugging enabled (the symbol DEBUG_BUILD is set).
@@ -71,6 +71,15 @@
 // This enables the serial port associated to the Bluetooth interface
 //#define BTENABLED              // Enable BT interface on AT90USB devices
 
+// The following define selects which electronics board you have.
+// Please choose the name from boards.h that matches your setup
+
+
+
+
+
+
+
 // Define this to set a unique identifier for this printer, (Used by some programs to differentiate between machines)
 // You can use an online service to generate a random UUID. (eg http://www.uuidgenerator.net/version4)
 // #define MACHINE_UUID "00000000-0000-0000-0000-000000000000"
@@ -84,8 +93,14 @@
 
 #define POWER_SUPPLY 1
 
+
+
+
+
 // Define this to have the electronics keep the power supply off on startup. If you don't know what this is leave it.
 // #define PS_DEFAULT_OFF
+
+
 
 // This makes temp sensor 1 a redundant sensor for sensor 0. If the temperatures difference between these sensors is to high the print will be aborted.
 //#define TEMP_SENSOR_1_AS_REDUNDANT
@@ -95,6 +110,8 @@
 #define TEMP_RESIDENCY_TIME 3  // (seconds)
 #define TEMP_HYSTERESIS 5       // (degC) range of +/- temperatures considered "close" to the target one
 #define TEMP_WINDOW     1       // (degC) Window around target to start the residency timer x degC early.
+
+
 
 // If your bed has low resistance e.g. .6 ohm and throws the fuse you can duty cycle it to reduce the
 // average current. The value should be an integer and the heat bed will be turned on for 1 interval of
@@ -109,17 +126,30 @@
 // Comment the following line to disable PID and enable bang-bang.
 #define PIDTEMP
 #define BANG_MAX 255 // limits current to nozzle while in bang-bang mode; 255=full current
-#define PID_MAX BANG_MAX // limits current to nozzle while PID is active (see PID_FUNCTIONAL_RANGE below); 255=full current
+#define PID_MAX BANG_MAX // limits current to nozzle while PID is active; 255=full current
 #ifdef PIDTEMP
   //#define PID_DEBUG // Sends debug data to the serial port.
   //#define PID_OPENLOOP 1 // Puts PID in open loop. M104/M140 sets the output power from 0 to PID_MAX
   //#define SLOW_PWM_HEATERS // PWM with very low frequency (roughly 0.125Hz=8s) and minimum state time of approximately 1s useful for heaters driven by a relay
-  #define PID_FUNCTIONAL_RANGE 10 // If the temperature difference between the target temperature and the actual temperature
-                                  // is more then PID_FUNCTIONAL_RANGE then the PID will be shut off and the heater will be set to min/max.
   #define PID_INTEGRAL_DRIVE_MAX PID_MAX  //limit for the integral term
-  #define K1 0.95 //smoothing factor within the PID
+  #define PID_K1 0.95 //smoothing factor within the PID
   #define PID_dT ((OVERSAMPLENR * 10.0)/(F_CPU / 64.0 / 256.0)) //sampling period of the temperature routine
+
+// If you are using a pre-configured hotend then you can use one of the value sets by uncommenting it
+// Ultimaker
+    
+
+// MakerGear
+//    #define  DEFAULT_Kp 7.0
+//    #define  DEFAULT_Ki 0.1
+//    #define  DEFAULT_Kd 12
+
+// Mendel Parts V9 on 12V
+//    #define  DEFAULT_Kp 63.0
+//    #define  DEFAULT_Ki 2.25
+//    #define  DEFAULT_Kd 440
 #endif // PIDTEMP
+
 
 //this prevents dangerous Extruder moves, i.e. if the temperature is under the limit
 //can be software-disabled for whatever purposes by
@@ -134,10 +164,50 @@
 
 #define EXTRUDE_MAXLENGTH (X_MAX_LENGTH+Y_MAX_LENGTH) //prevent extrusion of very large distances.
 
+/*================== Thermal Runaway Protection ==============================
+This is a feature to protect your printer from burn up in flames if it has
+a thermistor coming off place (this happened to a friend of mine recently and
+motivated me writing this feature).
+
+The issue: If a thermistor come off, it will read a lower temperature than actual.
+The system will turn the heater on forever, burning up the filament and anything
+else around.
+
+After the temperature reaches the target for the first time, this feature will 
+start measuring for how long the current temperature stays below the target 
+minus _HYSTERESIS (set_temperature - THERMAL_RUNAWAY_PROTECTION_HYSTERESIS).
+
+If it stays longer than _PERIOD, it means the thermistor temperature
+cannot catch up with the target, so something *may be* wrong. Then, to be on the
+safe side, the system will he halt.
+
+Bear in mind the count down will just start AFTER the first time the 
+thermistor temperature is over the target, so you will have no problem if
+your extruder heater takes 2 minutes to hit the target on heating.
+
+*/
+// If you want to enable this feature for all your extruder heaters,
+// uncomment the 2 defines below:
+
+// Parameters for all extruder heaters
+//#define THERMAL_RUNAWAY_PROTECTION_PERIOD 40 //in seconds
+//#define THERMAL_RUNAWAY_PROTECTION_HYSTERESIS 4 // in degree Celsius
+
+// If you want to enable this feature for your bed heater,
+// uncomment the 2 defines below:
+
+// Parameters for the bed heater
+//#define THERMAL_RUNAWAY_PROTECTION_BED_PERIOD 20 //in seconds
+//#define THERMAL_RUNAWAY_PROTECTION_BED_HYSTERESIS 2 // in degree Celsius
+//===========================================================================
+
 
 //===========================================================================
 //=============================Mechanical Settings===========================
 //===========================================================================
+
+// Uncomment the following line to enable CoreXY kinematics
+// #define COREXY
 
 // coarse Endstop Settings
 #define ENDSTOPPULLUPS // Comment this out (using // at the start of the line) to disable the endstop pullup resistors
@@ -163,19 +233,11 @@
 
 // The pullups are needed if you directly connect a mechanical endswitch between the signal and ground pins.
 
-#if MOTHERBOARD == BOARD_RAMPS_14_EFB 
-	#define X_MAX_ENDSTOP_INVERTING 1 // set to 1 to invert the logic of the endstop.
-	#define Y_MAX_ENDSTOP_INVERTING 1 // set to 1 to invert the logic of the endstop.
-	#define Z_MAX_ENDSTOP_INVERTING 1 // set to 1 to invert the logic of the endstop.
-	//#define DISABLE_MAX_ENDSTOPS
-	//#define DISABLE_MIN_ENDSTOPS
-#else
-	#define X_MAX_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
-	#define Y_MAX_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
-	#define Z_MAX_ENDSTOP_INVERTING 1 // set to 1 to invert the logic of the endstop.
-	//#define DISABLE_MAX_ENDSTOPS
-	//#define DISABLE_MIN_ENDSTOPS
-#endif
+#define X_MAX_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
+#define Y_MAX_ENDSTOP_INVERTING 0 // set to 1 to invert the logic of the endstop.
+#define Z_MAX_ENDSTOP_INVERTING 1 // set to 1 to invert the logic of the endstop.
+//#define DISABLE_MAX_ENDSTOPS
+//#define DISABLE_MIN_ENDSTOPS
 
 // Disable max endstops for compatibility with endstop checking routine
 #if defined(COREXY) && !defined(DISABLE_MAX_ENDSTOPS)
@@ -195,6 +257,7 @@
 #define DISABLE_E 0// For all extruders
 #define DISABLE_INACTIVE_EXTRUDER 1 //disable only inactive extruders and keep active extruder enabled
 
+
 // ENDSTOP SETTINGS:
 // Sets direction of endstops when homing; 1=MAX, -1=MIN
 #define X_HOME_DIR -1
@@ -202,12 +265,13 @@
 #define Z_HOME_DIR -1
 
 #ifdef DEBUG_DISABLE_SWLIMITS
-	#define min_software_endstops 0
-	#define max_software_endstops 0
+#define min_software_endstops 0
+#define max_software_endstops 0
 #else
-	#define min_software_endstops 1 // If true, axis won't move to coordinates less than HOME_POS.
-	#define max_software_endstops 1 // If true, axis won't move to coordinates greater than the defined lengths below.
+#define min_software_endstops 1 // If true, axis won't move to coordinates less than HOME_POS.
+#define max_software_endstops 1  // If true, axis won't move to coordinates greater than the defined lengths below.
 #endif //DEBUG_DISABLE_SWLIMITS
+
 
 #define X_MAX_LENGTH (X_MAX_POS - X_MIN_POS)
 #define Y_MAX_LENGTH (Y_MAX_POS - Y_MIN_POS) 
@@ -333,6 +397,14 @@
 #endif // ENABLE_AUTO_BED_LEVELING
 
 
+// The position of the homing switches
+//#define MANUAL_HOME_POSITIONS  // If defined, MANUAL_*_HOME_POS below will be used
+//#define BED_CENTER_AT_0_0  // If defined, the center of the bed is at (X=0, Y=0)
+
+//Manual homing switch locations:
+// For deltabots this means top and center of the Cartesian print volume.
+
+
 // Offset of the extruders (uncomment if using more than one and relying on firmware to position when changing).
 // The offset has to be X=0, Y=0 for the extruder 0 hotend (default extruder).
 // For the other hotends it is their distance from the extruder 0 hotend.
@@ -403,7 +475,8 @@
 // Use software PWM to drive the fan, as for the heaters. This uses a very low frequency
 // which is not ass annoying as with the hardware PWM. On the other hand, if this frequency
 // is too low, you should also increment SOFT_PWM_SCALE.
-//#define FAN_SOFT_PWM
+#define FAN_SOFT_PWM
+#define FAN_SOFT_PWM_BITS 4 //PWM bit resolution = 4bits, freq = 62.5Hz
 
 // Incrementing this by 1 will double the software PWM frequency,
 // affecting heaters, and the fan if FAN_SOFT_PWM is enabled.
@@ -435,11 +508,7 @@
 //
 //#define NUM_SERVOS 3 // Servo index starts with 0 for M280 command
 
-#if MOTHERBOARD == BOARD_RAMPS_14_EFB
-	#define DEFAULT_NOMINAL_FILAMENT_DIA  2.85  //Enter the diameter (in mm) of the filament generally used (3.0 mm or 1.75 mm). Used by the volumetric extrusion.
-#else
-	#define DEFAULT_NOMINAL_FILAMENT_DIA  1.75  //Enter the diameter (in mm) of the filament generally used (3.0 mm or 1.75 mm). Used by the volumetric extrusion.
-#endif
+//#define DEFAULT_NOMINAL_FILAMENT_DIA  1.75  //Enter the diameter (in mm) of the filament generally used (3.0 mm or 1.75 mm). Used by the volumetric extrusion.
 
 // Calibration status of the machine, to be stored into the EEPROM,
 // (unsigned char*)EEPROM_CALIBRATION_STATUS

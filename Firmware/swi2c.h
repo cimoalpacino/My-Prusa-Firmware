@@ -11,10 +11,14 @@ extern "C" {
 #endif //defined(__cplusplus)
 
 //initialize
-extern void swi2c_init(void);
+//#if MOTHERBOARD != BOARD_RAMPS_13_EFB
+	extern void swi2c_init(void);
+//#endif
 
 //check device address acknowledge
-extern uint8_t swi2c_check(uint8_t dev_addr);
+//#if MOTHERBOARD != BOARD_RAMPS_13_EFB
+	extern uint8_t swi2c_check(uint8_t dev_addr);
+//#endif
 
 //read write functions - 8bit address (most i2c chips)
 #ifdef SWI2C_A8

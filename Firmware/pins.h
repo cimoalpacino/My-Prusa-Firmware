@@ -24,23 +24,20 @@
 ******************************************************************/
 
 #if MOTHERBOARD == BOARD_RAMBO_MINI_1_0 //200 - orig 102
-	#include "pins_Rambo_1_0.h"
+#include "pins_Rambo_1_0.h"
 #endif //MOTHERBOARD == BOARD_RAMBO_MINI_1_0
 
 #if MOTHERBOARD == BOARD_RAMBO_MINI_1_3 //203 - orig 302
-	#include "pins_Rambo_1_3.h"
+#include "pins_Rambo_1_3.h"
 #endif //MOTHERBOARD == BOARD_RAMBO_MINI_1_3
 
 #if MOTHERBOARD == BOARD_EINSY_1_0a //310 - new
-	#include "pins_Einsy_1_0.h"
+#include "pins_Einsy_1_0.h"
 #endif //MOTHERBOARD == BOARD_EINSY_1_0a
 
-/*****************************************************************
-* Arduino RAMPS 1.4 Pin Assignments
-******************************************************************/
-#if MOTHERBOARD == BOARD_RAMPS_14_EFB // 204 - BOARD_RAMPS_14_EFB
-	#include "pins_Ramps.h"
-#endif //MOTHERBOARD == BOARD_RAMPS_14_EFB
+#if MOTHERBOARD == BOARD_RAMPS_13_EFB //204
+#include "pins_Ramps.h"
+#endif //MOTHERBOARD == BOARD_RAMPS_13_EFB
 
 #ifndef KNOWN_BOARD
 #error Unknown MOTHERBOARD value in configuration.h

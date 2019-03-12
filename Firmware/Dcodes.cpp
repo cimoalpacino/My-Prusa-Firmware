@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <avr/pgmspace.h>
 
-
+/*
 #define DBG(args...) printf_P(args)
 
 inline void print_hex_nibble(uint8_t val)
@@ -34,7 +34,6 @@ void print_eeprom(uint16_t address, uint16_t count, uint8_t countperline = 16)
 		uint8_t count_line = countperline;
 		while (count && count_line)
 		{
-			uint8_t data = 0;
 			putchar(' ');
 			print_hex_byte(eeprom_read_byte((uint8_t*)address++));
 			count_line--;
@@ -94,7 +93,7 @@ void print_mem(uint32_t address, uint16_t count, uint8_t type, uint8_t countperl
 		putchar('\n');
 	}
 }
-
+*/
 #ifdef DEBUG_DCODE3
 #define EEPROM_SIZE 0x1000
 void dcode_3()
@@ -115,7 +114,7 @@ void dcode_3()
 		count = parse_hex(strchr_pointer + 1, data, 16);
 		if (count > 0)
 		{
-			for (int i = 0; i < count; i++)
+			for (uint16_t i = 0; i < count; i++)
 				eeprom_write_byte((uint8_t*)(address + i), data[i]);
 			printf_P(_N("%d bytes written to EEPROM at address 0x%04x"), count, address);
 			putchar('\n');
@@ -142,7 +141,6 @@ void dcode_3()
 }
 #endif //DEBUG_DCODE3
 
-#ifdef DEBUG_DCODES
 
 #include "ConfigurationStore.h"
 #include "cmdqueue.h"
@@ -150,8 +148,9 @@ void dcode_3()
 #include "adc.h"
 #include "temperature.h"
 #include <avr/wdt.h>
+//#include "bootapp.h"
 
-
+/*
 #define FLASHSIZE     0x40000
 
 #define RAMSIZE        0x2000
@@ -172,6 +171,8 @@ extern float axis_steps_per_unit[NUM_AXIS];
 
 //#define LOG(args...) printf(args)
 #define LOG(args...)
+*/
+#ifdef DEBUG_DCODES
 
 void dcode__1()
 {
@@ -279,10 +280,13 @@ void dcode_4()
 		}
 	}
 }
-/*
+#endif //DEBUG_DCODES
+
+#ifdef DEBUG_DCODE5
+
 void dcode_5()
 {
-	LOG("D5 - Read/Write FLASH\n");
+	printf_P(PSTR("D5 - Read/Write FLASH\n"));
 	uint32_t address = 0x0000; //default 0x0000
 	uint16_t count = 0x0400; //default 0x0400 (1kb block)
 	if (code_seen('A')) // Address (0x00000-0x3ffff)
@@ -306,17 +310,11 @@ void dcode_5()
 	{
 		if (bErase)
 		{
-			LOG(count, DEC);
-			LOG(" bytes of FLASH at address ");
-			print_hex_word(address);
-			putchar(" will be erased\n");
+			printf_P(PSTR("%d bytes of FLASH at address %05x will be erased\n"), count, address);
 		}
 		if (bCopy)
 		{
-			LOG(count, DEC);
-			LOG(" bytes will be written to FLASH at address ");
-			print_hex_word(address);
-			putchar('\n');
+			printf_P(PSTR("%d  bytes will be written to FLASH at address %05x\n"), count, address);
 		}
 		cli();
 		boot_app_magic = 0x55aa55aa;
@@ -324,6 +322,7 @@ void dcode_5()
 		boot_copy_size = (uint16_t)count;
 		boot_dst_addr = (uint32_t)address;
 		boot_src_addr = (uint32_t)(&data);
+		bootapp_print_vars();
 		wdt_enable(WDTO_15MS);
 		while(1);
 	}
@@ -344,7 +343,9 @@ void dcode_5()
 		putchar('\n');
 	}
 }
-*/
+#endif //DEBUG_DCODE5
+
+#ifdef DEBUG_DCODES
 
 void dcode_6()
 {
@@ -368,7 +369,6 @@ void dcode_7()
 
 void dcode_8()
 {
-#ifdef PINDA_THERMISTOR
 	printf_P(PSTR("D8 - Read/Write PINDA\n"));
 	uint8_t cal_status = calibration_status_pinda();
 	float temp_pinda = current_temperature_pinda;
@@ -406,7 +406,6 @@ void dcode_8()
 		}
 	}
 	printf_P(PSTR("temp_pinda=%d offset_z=%d.%03d\n"), (int)temp_pinda, (int)offset_z, ((int)(1000 * offset_z) % 1000));
-#endif // PINDA_THERMISTOR
 }
 
 const char* dcode_9_ADC_name(uint8_t i)
@@ -447,9 +446,7 @@ uint16_t dcode_9_ADC_val(uint8_t i)
 	case 0: return current_temperature_raw[0];
 	case 1: return 0;
 	case 2: return current_temperature_bed_raw;
-#ifdef PINDA_THERMISTOR
 	case 3: return current_temperature_raw_pinda;
-#endif //PINDA_THERMISTOR
 #ifdef VOLT_PWR_PIN
 	case 4: return current_voltage_raw_pwr;
 #endif //VOLT_PWR_PIN

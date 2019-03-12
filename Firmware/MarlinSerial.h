@@ -57,11 +57,14 @@
 #define M_USARTx_RX_vect SERIAL_REGNAME(USART,SERIAL_PORT,_RX_vect)
 #define M_U2Xx SERIAL_REGNAME(U2X,SERIAL_PORT,)
 
+
+
 #define DEC 10
 #define HEX 16
 #define OCT 8
 #define BIN 2
 #define BYTE 0
+
 
 #ifndef AT90USB
 // Define constants and variables for buffering incoming serial data.  We're
@@ -141,9 +144,9 @@ class MarlinSerial //: public Stream
                         rx_buffer.head = i;
                     }
                     //selectedSerialPort = 0;
-					#ifdef DEBUG_DUMP_TO_2ND_SERIAL
+#ifdef DEBUG_DUMP_TO_2ND_SERIAL
 					UDR1 = c;
-					#endif //DEBUG_DUMP_TO_2ND_SERIAL
+#endif //DEBUG_DUMP_TO_2ND_SERIAL
                 }
             }
         } else { // if(selectedSerialPort == 1) {
@@ -165,9 +168,9 @@ class MarlinSerial //: public Stream
                         rx_buffer.head = i;
                     }
                     //selectedSerialPort = 1;
-					#ifdef DEBUG_DUMP_TO_2ND_SERIAL
+#ifdef DEBUG_DUMP_TO_2ND_SERIAL
 					M_UDRx = c;
-					#endif //DEBUG_DUMP_TO_2ND_SERIAL
+#endif //DEBUG_DUMP_TO_2ND_SERIAL
                 }
             }
         }

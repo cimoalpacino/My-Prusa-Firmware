@@ -70,11 +70,15 @@
 // before setting a PWM value. (Does not work with software PWM for fan on Sanguinololu)
 #define FAN_KICKSTART_TIME 800
 
+
+
+
 //===========================================================================
 //=============================Mechanical Settings===========================
 //===========================================================================
 
 #define ENDSTOPS_ONLY_FOR_HOMING // If defined the endstops will only be used for homing
+
 
 //// AUTOSET LOCATIONS OF LIMIT SWITCHES
 //// Added by ZetaPhoenix 09-15-2012
@@ -169,6 +173,9 @@
 
 #define DEFAULT_MINIMUMFEEDRATE       0.0     // minimum feedrate
 #define DEFAULT_MINTRAVELFEEDRATE     0.0
+
+// Feedrates for manual moves along X, Y, Z, E from panel
+
 
 //Comment to disable setting feedrate multiplier via encoder
 #define ULTIPANEL_FEEDMULTIPLY
@@ -352,17 +359,14 @@ const unsigned int dropsegments=5; //everything with less than this number of st
   #define BLOCK_BUFFER_SIZE 16 // maximize block buffer
 #endif
 
+
 //The ASCII buffer for receiving from the serial:
 #define MAX_CMD_SIZE 96
 #define BUFSIZE 4
 // The command header contains the following values:
 // 1st byte: the command source (CMDBUFFER_CURRENT_TYPE_USB, CMDBUFFER_CURRENT_TYPE_SDCARD, CMDBUFFER_CURRENT_TYPE_UI or CMDBUFFER_CURRENT_TYPE_CHAINED)
 // 2nd and 3rd byte (LSB first) contains a 16bit length of a command including its preceding comments.
-#ifndef TESTING
-	#define CMDHDRSIZE 3
-#else
-	#define CMDHDRSIZE 3 //1
-#endif // !TESTING
+#define CMDHDRSIZE 3
 
 
 // Firmware based and LCD controlled retract
@@ -384,6 +388,7 @@ const unsigned int dropsegments=5; //everything with less than this number of st
 #endif
 
 //adds support for experimental filament exchange support M600; requires display
+
 
 #ifdef FILAMENTCHANGEENABLE
   #ifdef EXTRUDER_RUNOUT_PREVENT

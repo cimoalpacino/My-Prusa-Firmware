@@ -7,13 +7,14 @@
 #include "stk500.h"
 #include "bootapp.h"
 
+
 #define OPTIBOOT_MAJVER 6
 #define OPTIBOOT_CUSTOMVER 0
 #define OPTIBOOT_MINVER 2
 static unsigned const int __attribute__((section(".version"))) 
   optiboot_version = 256*(OPTIBOOT_MAJVER + OPTIBOOT_CUSTOMVER) + OPTIBOOT_MINVER;
 
-/* Watchdog settings */
+//* Watchdog settings */
 #define WATCHDOG_OFF    (0)
 #define WATCHDOG_16MS   (_BV(WDE))
 #define WATCHDOG_32MS   (_BV(WDP0) | _BV(WDE))
@@ -54,14 +55,14 @@ static uint8_t getch(void) {
   uint8_t ch;
   while(! RECV_READY) ;
   if (!(UCSR0A & _BV(FE0))) {
-      /*
-       * A Framing Error indicates (probably) that something is talking
-       * to us at the wrong bit rate.  Assume that this is because it
-       * expects to be talking to the application, and DON'T reset the
-       * watchdog.  This should cause the bootloader to abort and run
-       * the application "soon", if it keeps happening.  (Note that we
-       * don't care that an invalid char is returned...)
-       */
+      ///*
+      // * A Framing Error indicates (probably) that something is talking
+      // * to us at the wrong bit rate.  Assume that this is because it
+      // * expects to be talking to the application, and DON'T reset the
+      // * watchdog.  This should cause the bootloader to abort and run
+      // * the application "soon", if it keeps happening.  (Note that we
+      // * don't care that an invalid char is returned...)
+      // */
     watchdogReset();
   }
   ch = UDR0;
@@ -130,7 +131,7 @@ void optiboot_w25x20cl_enter()
     }
     // Send the initial magic string.
     while (ptr != end)
-      putch(pgm_read_byte_far(ptr ++));
+      putch(pgm_read_byte(ptr ++));
     watchdogReset();
     // Wait for one second until a magic string (constant entry_magic) is received
     // from the serial line.
@@ -145,7 +146,7 @@ void optiboot_w25x20cl_enter()
           return;
       }
       ch = UDR0;
-      if (pgm_read_byte_far(ptr ++) != ch)
+      if (pgm_read_byte(ptr ++) != ch)
           // Magic was not received correctly, continue with the application
           return;
       watchdogReset();
@@ -153,34 +154,34 @@ void optiboot_w25x20cl_enter()
     // Send the cfm magic string.
     ptr = entry_magic_cfm;
     while (ptr != end)
-      putch(pgm_read_byte_far(ptr ++));
+      putch(pgm_read_byte(ptr ++));
   }
 
   spi_init();
   w25x20cl_init();
   watchdogConfig(WATCHDOG_OFF);
 
-  /* Forever loop: exits by causing WDT reset */
+  //* Forever loop: exits by causing WDT reset */
   for (;;) {
-    /* get character from UART */
+    //* get character from UART *
     ch = getch();
 
     if(ch == STK_GET_PARAMETER) {
       unsigned char which = getch();
       verifySpace();
-      /*
-       * Send optiboot version as "SW version"
-       * Note that the references to memory are optimized away.
-       */
+      ///*
+      // * Send optiboot version as "SW version"
+      // * Note that the references to memory are optimized away.
+      // *
       if (which == STK_SW_MINOR) {
         putch(optiboot_version & 0xFF);
       } else if (which == STK_SW_MAJOR) {
         putch(optiboot_version >> 8);
       } else {
-        /*
-         * GET PARAMETER returns a generic 0x03 reply for
-               * other parameters - enough to keep Avrdude happy
-         */
+        ///*
+        // * GET PARAMETER returns a generic 0x03 reply for
+        //       * other parameters - enough to keep Avrdude happy
+        // */
         putch(0x03);
       }
     }
@@ -226,7 +227,7 @@ void optiboot_w25x20cl_enter()
         putch(0x00);
       }
     }
-    /* Write memory, length is big endian and is in bytes */
+    //* Write memory, length is big endian and is in bytes */
     else if(ch == STK_PROG_PAGE) {
       // PROGRAM PAGE - we support flash programming only, not EEPROM
       uint8_t desttype;
@@ -269,10 +270,9 @@ void optiboot_w25x20cl_enter()
         w25x20cl_disable_wr();
       }
     }
-    /* Read memory block mode, length is big endian.  */
+    //* Read memory block mode, length is big endian.  */
     else if(ch == STK_READ_PAGE) {
       uint32_t addr = (((uint32_t)rampz) << 16) | address;
-      uint8_t desttype;
       register pagelen_t i;
       // Read the page length, with the length transferred each nibble separately to work around
       // the Prusa's USB to serial infamous semicolon issue.
@@ -280,15 +280,15 @@ void optiboot_w25x20cl_enter()
       length |= ((pagelen_t)getch()) << 8;
       length |= getch();
       length |= getch();
-      // Read the destination type. It should always be 'F' as flash.
-      desttype = getch();
+      // Read the destination type. It should always be 'F' as flash. It is not checked.
+      (void)getch();
       verifySpace();
       w25x20cl_wait_busy();
       w25x20cl_rd_data(addr, buff, length);
       for (i = 0; i < length; ++ i)
         putch(buff[i]);
     }
-    /* Get device signature bytes  */
+    //* Get device signature bytes  */
     else if(ch == STK_READ_SIGN) {
       // READ SIGN - return what Avrdude wants to hear
       verifySpace();
