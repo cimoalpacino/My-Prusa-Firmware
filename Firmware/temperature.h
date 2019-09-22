@@ -27,17 +27,23 @@
   #include "stepper.h"
 #endif
 
+
+#ifdef SYSTEM_TIMER_2
+
+#define ENABLE_TEMPERATURE_INTERRUPT()  TIMSK2 |= (1<<OCIE2B)
+#define DISABLE_TEMPERATURE_INTERRUPT() TIMSK2 &= ~(1<<OCIE2B)
+
+#else //SYSTEM_TIMER_2
+
+#define ENABLE_TEMPERATURE_INTERRUPT()  TIMSK0 |= (1<<OCIE0B)
+#define DISABLE_TEMPERATURE_INTERRUPT() TIMSK0 &= ~(1<<OCIE0B)
+
+#endif //SYSTEM_TIMER_2
+
+
 // public functions
 void tp_init();  //initialize the heating
 void manage_heater(); //it is critical that this is called periodically.
-
-#ifdef FILAMENT_SENSOR
-// For converting raw Filament Width to milimeters 
- float analog2widthFil(); 
- 
-// For converting raw Filament Width to an extrusion ratio 
- int widthFil_to_size_ratio();
-#endif
 
 // low level conversion routines
 // do not use these routines and variables outside of temperature.cpp
@@ -49,6 +55,25 @@ extern float current_temperature[EXTRUDERS];
 #endif
 extern int target_temperature_bed;
 extern float current_temperature_bed;
+
+#ifdef PINDA_THERMISTOR
+extern uint16_t current_temperature_raw_pinda;
+extern float current_temperature_pinda;
+#endif
+
+#ifdef AMBIENT_THERMISTOR
+//extern int current_temperature_raw_ambient;
+extern float current_temperature_ambient;
+#endif
+
+#ifdef VOLT_PWR_PIN
+extern int current_voltage_raw_pwr;
+#endif
+
+#ifdef VOLT_BED_PIN
+extern int current_voltage_raw_bed;
+#endif
+
 #ifdef TEMP_SENSOR_1_AS_REDUNDANT
   extern float redundant_temperature;
 #endif
@@ -59,7 +84,7 @@ extern float current_temperature_bed;
 
 #ifdef PIDTEMP
   extern int pid_cycle, pid_number_of_cycles;
-  extern float Kp,Ki,Kd,Kc,_Kp,_Ki,_Kd;
+  extern float Kc,_Kp,_Ki,_Kd;
   extern bool pid_tuning_finished;
   float scalePID_i(float i);
   float scalePID_d(float d);
@@ -67,14 +92,13 @@ extern float current_temperature_bed;
   float unscalePID_d(float d);
 
 #endif
-#ifdef PIDTEMPBED
-  extern float bedKp,bedKi,bedKd;
-#endif
   
   
 #ifdef BABYSTEPPING
   extern volatile int babystepsTodo[3];
 #endif
+
+void resetPID(uint8_t extruder);
 
 inline void babystepsTodoZadd(int n)
 {
@@ -126,7 +150,21 @@ FORCE_INLINE float degTargetBed() {
 
 FORCE_INLINE void setTargetHotend(const float &celsius, uint8_t extruder) {  
   target_temperature[extruder] = celsius;
+  resetPID(extruder);
 };
+
+static inline void setTargetHotendSafe(const float &celsius, uint8_t extruder)
+{
+    if (extruder<EXTRUDERS) {
+      target_temperature[extruder] = celsius;
+      resetPID(extruder);
+    }
+}
+
+static inline void setAllTargetHotends(const float &celsius)
+{
+    for(int i=0;i<EXTRUDERS;i++) setTargetHotend(celsius,i);
+}
 
 FORCE_INLINE void setTargetBed(const float &celsius) {  
   target_temperature_bed = celsius;
@@ -175,11 +213,6 @@ FORCE_INLINE bool isCoolingBed() {
 #error Invalid number of extruders
 #endif
 
-#if (defined (TEMP_RUNAWAY_BED_HYSTERESIS) && TEMP_RUNAWAY_BED_TIMEOUT > 0) || (defined (TEMP_RUNAWAY_EXTRUDER_HYSTERESIS) && TEMP_RUNAWAY_EXTRUDER_TIMEOUT > 0)
-void temp_runaway_check(int _heater_id, float _target_temperature, float _current_temperature, float _output, bool _isbed);
-void temp_runaway_stop(bool isPreheat, bool isBed);
-#endif
-
 int getHeaterPower(int heater);
 void disable_heater();
 void setWatch();
@@ -202,6 +235,24 @@ void PID_autotune(float temp, int extruder, int ncycles);
 void setExtruderAutoFanState(int pin, bool state);
 void checkExtruderAutoFans();
 
+
+#if (defined(FANCHECK) && defined(TACH_0) && (TACH_0 > -1))
+
+void countFanSpeed();
+void checkFanSpeed();
+void fanSpeedError(unsigned char _fan);
+
+void check_fans();
+
+#endif //(defined(TACH_0))
+
+void check_min_temp();
+void check_max_temp();
+
+
 #endif
 
+extern unsigned long extruder_autofan_last_check;
+extern uint8_t fanSpeedBckp;
+extern bool fan_measuring;
 
