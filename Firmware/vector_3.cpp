@@ -1,167 +1,187 @@
-/*
-  vector_3.cpp - Vector library for bed leveling
-  Copyright (c) 2012 Lars Brubaker.  All right reserved.
+//w25x20cl.c
 
-  This library is free software; you can redistribute it and/or
-  modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
+#include "w25x20cl.h"
+#include <avr/io.h>
+#include <avr/pgmspace.h>
+#include "io_atmega2560.h"
+#include "spi.h"
 
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
+/*RAMPS*/
+#ifdef W25X20CL
+#define _MFRID             0xEF
+#define _DEVID             0x11
 
-  You should have received a copy of the GNU Lesser General Public
-  License along with this library; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
-#include <math.h>
-#include "Marlin.h"
+#define _CMD_ENABLE_WR     0x06
+#define _CMD_ENABLE_WR_VSR 0x50
+#define _CMD_DISABLE_WR    0x04
+#define _CMD_RD_STATUS_REG 0x05
+#define _CMD_WR_STATUS_REG 0x01
+#define _CMD_RD_DATA       0x03
+#define _CMD_RD_FAST       0x0b
+#define _CMD_RD_FAST_D_O   0x3b
+#define _CMD_RD_FAST_D_IO  0xbb
+#define _CMD_PAGE_PROGRAM  0x02
+#define _CMD_SECTOR_ERASE  0x20
+#define _CMD_BLOCK32_ERASE 0x52
+#define _CMD_BLOCK64_ERASE 0xd8
+#define _CMD_CHIP_ERASE    0xc7
+#define _CMD_CHIP_ERASE2   0x60
+#define _CMD_PWR_DOWN      0xb9
+#define _CMD_PWR_DOWN_REL  0xab
+#define _CMD_MFRID_DEVID   0x90
+#define _CMD_MFRID_DEVID_D 0x92
+#define _CMD_JEDEC_ID      0x9f
+#define _CMD_RD_UID        0x4b
 
-#ifdef ENABLE_AUTO_BED_LEVELING
-#include "vector_3.h"
+#define _CS_LOW()  PORT(W25X20CL_PIN_CS) &= ~__MSK(W25X20CL_PIN_CS)
+#define _CS_HIGH() PORT(W25X20CL_PIN_CS) |= __MSK(W25X20CL_PIN_CS)
 
-vector_3::vector_3() : x(0), y(0), z(0) { }
+//#define _SPI_TX swspi_tx
+//#define _SPI_RX swspi_rx
+#define _SPI_TX(b)   spi_txrx(b)
+#define _SPI_RX()    spi_txrx(0xff)
 
-vector_3::vector_3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) { }
 
-vector_3 vector_3::cross(vector_3 left, vector_3 right)
+int w25x20cl_mfrid_devid(void);
+
+
+int8_t w25x20cl_init(void)
 {
-	return vector_3(left.y * right.z - left.z * right.y,
-		left.z * right.x - left.x * right.z,
-		left.x * right.y - left.y * right.x);
+	PIN_OUT(W25X20CL_PIN_CS);
+	_CS_HIGH();
+	W25X20CL_SPI_ENTER();
+	if (!w25x20cl_mfrid_devid()) return 0;
+	return 1;
 }
 
-vector_3 vector_3::operator+(vector_3 v) 
+void w25x20cl_enable_wr(void)
 {
-	return vector_3((x + v.x), (y + v.y), (z + v.z));
+	_CS_LOW();
+	_SPI_TX(_CMD_ENABLE_WR);             // send command 0x06
+	_CS_HIGH();
 }
 
-vector_3 vector_3::operator-(vector_3 v) 
+void w25x20cl_disable_wr(void)
 {
-	return vector_3((x - v.x), (y - v.y), (z - v.z));
+	_CS_LOW();
+	_SPI_TX(_CMD_DISABLE_WR);            // send command 0x04
+	_CS_HIGH();
 }
 
-vector_3 vector_3::get_normal() 
+uint8_t w25x20cl_rd_status_reg(void)
 {
-	vector_3 normalized = vector_3(x, y, z);
-	normalized.normalize();
-	return normalized;
+	_CS_LOW();
+	_SPI_TX(_CMD_RD_STATUS_REG);         // send command 0x90
+	uint8_t val = _SPI_RX();             // receive value
+	_CS_HIGH();
+	return val;
 }
 
-float vector_3::get_length() 
+void w25x20cl_wr_status_reg(uint8_t val)
 {
-	float length = sqrt((x * x) + (y * y) + (z * z));
-	return length;
-}
- 
-void vector_3::normalize()
-{
-	float length = get_length();
-	x /= length;
-	y /= length;
-	z /= length;
+	_CS_LOW();
+	_SPI_TX(_CMD_WR_STATUS_REG);         // send command 0x90
+	_SPI_TX(val);                        // send value
+	_CS_HIGH();
 }
 
-void vector_3::apply_rotation(matrix_3x3 matrix)
+void w25x20cl_rd_data(uint32_t addr, uint8_t* data, uint16_t cnt)
 {
-	float resultX = x * matrix.matrix[3*0+0] + y * matrix.matrix[3*1+0] + z * matrix.matrix[3*2+0];
-	float resultY = x * matrix.matrix[3*0+1] + y * matrix.matrix[3*1+1] + z * matrix.matrix[3*2+1];
-	float resultZ = x * matrix.matrix[3*0+2] + y * matrix.matrix[3*1+2] + z * matrix.matrix[3*2+2];
-
-	x = resultX;
-	y = resultY;
-	z = resultZ;
+	_CS_LOW();
+	_SPI_TX(_CMD_RD_DATA);               // send command 0x03
+	_SPI_TX(((uint8_t*)&addr)[2]);       // send addr bits 16..23
+	_SPI_TX(((uint8_t*)&addr)[1]);       // send addr bits 8..15
+	_SPI_TX(((uint8_t*)&addr)[0]);       // send addr bits 0..7
+	while (cnt--)                        // receive data
+		*(data++) = _SPI_RX();
+	_CS_HIGH();
 }
 
-void vector_3::debug(char* title)
+void w25x20cl_page_program(uint32_t addr, uint8_t* data, uint16_t cnt)
 {
-	SERIAL_PROTOCOL(title);
-	SERIAL_PROTOCOLPGM(" x: ");
-	SERIAL_PROTOCOL(x);
-	SERIAL_PROTOCOLPGM(" y: ");
-	SERIAL_PROTOCOL(y);
-	SERIAL_PROTOCOLPGM(" z: ");
-	SERIAL_PROTOCOL(z);
-	SERIAL_PROTOCOLPGM("\n");
+	_CS_LOW();
+	_SPI_TX(_CMD_PAGE_PROGRAM);          // send command 0x02
+	_SPI_TX(((uint8_t*)&addr)[2]);       // send addr bits 16..23
+	_SPI_TX(((uint8_t*)&addr)[1]);       // send addr bits 8..15
+	_SPI_TX(((uint8_t*)&addr)[0]);       // send addr bits 0..7
+	while (cnt--)                        // send data
+		_SPI_TX(*(data++));
+	_CS_HIGH();
 }
 
-void apply_rotation_xyz(matrix_3x3 matrix, float &x, float& y, float& z)
+void w25x20cl_page_program_P(uint32_t addr, uint8_t* data, uint16_t cnt)
 {
-	vector_3 vector = vector_3(x, y, z);
-	vector.apply_rotation(matrix);
-	x = vector.x;
-	y = vector.y;
-	z = vector.z;
+	_CS_LOW();
+	_SPI_TX(_CMD_PAGE_PROGRAM);          // send command 0x02
+	_SPI_TX(((uint8_t*)&addr)[2]);       // send addr bits 16..23
+	_SPI_TX(((uint8_t*)&addr)[1]);       // send addr bits 8..15
+	_SPI_TX(((uint8_t*)&addr)[0]);       // send addr bits 0..7
+	while (cnt--)                        // send data
+		_SPI_TX(pgm_read_byte(data++));
+	_CS_HIGH();
 }
 
-matrix_3x3 matrix_3x3::create_from_rows(vector_3 row_0, vector_3 row_1, vector_3 row_2)
+void w25x20cl_erase(uint8_t cmd, uint32_t addr)
 {
-        //row_0.debug("row_0");
-        //row_1.debug("row_1");
-        //row_2.debug("row_2");
-	matrix_3x3 new_matrix;
-	new_matrix.matrix[0] = row_0.x; new_matrix.matrix[1] = row_0.y; new_matrix.matrix[2] = row_0.z; 
-	new_matrix.matrix[3] = row_1.x; new_matrix.matrix[4] = row_1.y; new_matrix.matrix[5] = row_1.z; 
-	new_matrix.matrix[6] = row_2.x; new_matrix.matrix[7] = row_2.y; new_matrix.matrix[8] = row_2.z; 
-        //new_matrix.debug("new_matrix");
-        
-	return new_matrix;
+	_CS_LOW();
+	_SPI_TX(cmd);          			     // send command 0x20
+	_SPI_TX(((uint8_t*)&addr)[2]);       // send addr bits 16..23
+	_SPI_TX(((uint8_t*)&addr)[1]);       // send addr bits 8..15
+	_SPI_TX(((uint8_t*)&addr)[0]);       // send addr bits 0..7
+	_CS_HIGH();
 }
 
-void matrix_3x3::set_to_identity()
+void w25x20cl_sector_erase(uint32_t addr)
 {
-	matrix[0] = 1; matrix[1] = 0; matrix[2] = 0;
-	matrix[3] = 0; matrix[4] = 1; matrix[5] = 0;
-	matrix[6] = 0; matrix[7] = 0; matrix[8] = 1;
+	return w25x20cl_erase(_CMD_SECTOR_ERASE, addr);
 }
 
-matrix_3x3 matrix_3x3::create_look_at(vector_3 target)
+void w25x20cl_block32_erase(uint32_t addr)
 {
-    vector_3 z_row = target.get_normal();
-    vector_3 x_row = vector_3(1, 0, -target.x/target.z).get_normal();
-    vector_3 y_row = vector_3::cross(z_row, x_row).get_normal();
+	return w25x20cl_erase(_CMD_BLOCK32_ERASE, addr);
+}
 
-   // x_row.debug("x_row");
-   // y_row.debug("y_row");
-   // z_row.debug("z_row");
+void w25x20cl_block64_erase(uint32_t addr)
+{
+	return w25x20cl_erase(_CMD_BLOCK64_ERASE, addr);
+}
 
- 
-     // create the matrix already correctly transposed
-    matrix_3x3 rot = matrix_3x3::create_from_rows(x_row, y_row, z_row);
-
- //   rot.debug("rot");
-    return rot;
+void w25x20cl_chip_erase(void)
+{
+	_CS_LOW();
+	_SPI_TX(_CMD_CHIP_ERASE);            // send command 0xc7
+	_CS_HIGH();
 }
 
 
-matrix_3x3 matrix_3x3::transpose(matrix_3x3 original)
+void w25x20cl_rd_uid(uint8_t* uid)
 {
-  matrix_3x3 new_matrix;
-  new_matrix.matrix[0] = original.matrix[0]; new_matrix.matrix[1] = original.matrix[3]; new_matrix.matrix[2] = original.matrix[6]; 
-  new_matrix.matrix[3] = original.matrix[1]; new_matrix.matrix[4] = original.matrix[4]; new_matrix.matrix[5] = original.matrix[7]; 
-  new_matrix.matrix[6] = original.matrix[2]; new_matrix.matrix[7] = original.matrix[5]; new_matrix.matrix[8] = original.matrix[8];
-  return new_matrix;
+	_CS_LOW();
+	_SPI_TX(_CMD_RD_UID);                // send command 0x4b
+	uint8_t cnt = 4;                     // 4 dummy bytes
+	while (cnt--)                        // receive dummy bytes
+		_SPI_RX();
+	cnt = 8;                             // 8 bytes UID
+	while (cnt--)                        // receive UID
+		uid[7 - cnt] = _SPI_RX();
+	_CS_HIGH();
 }
 
-void matrix_3x3::debug(char* title)
+int w25x20cl_mfrid_devid(void)
 {
-	SERIAL_PROTOCOL(title);
-	SERIAL_PROTOCOL("\n");
-	int count = 0;
-	for(int i=0; i<3; i++)
-	{
-		for(int j=0; j<3; j++)
-		{
-			SERIAL_PROTOCOL(matrix[count]);
-			SERIAL_PROTOCOLPGM(" ");
-		        count++;
-		}
-
-		SERIAL_PROTOCOLPGM("\n");
-	}
+	_CS_LOW();
+	_SPI_TX(_CMD_MFRID_DEVID);           // send command 0x90
+	uint8_t cnt = 3;                     // 3 address bytes
+	while (cnt--)                        // send address bytes
+		_SPI_TX(0x00);
+	uint8_t w25x20cl_mfrid = _SPI_RX();  // receive mfrid
+	uint8_t w25x20cl_devid = _SPI_RX();  // receive devid
+	_CS_HIGH();
+	return ((w25x20cl_mfrid == _MFRID) && (w25x20cl_devid == _DEVID));
 }
 
-#endif // #ifdef ENABLE_AUTO_BED_LEVELING
-
+void w25x20cl_wait_busy(void)
+{
+	while (w25x20cl_rd_status_reg() & W25X20CL_STATUS_BUSY) ;
+}
+#endif // W25X20CL /*RAMPS*/

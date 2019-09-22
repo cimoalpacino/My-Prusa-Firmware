@@ -651,11 +651,15 @@ void planner_abort_hard()
     waiting_inside_plan_buffer_line_print_aborted = true;
 }
 
+void plan_buffer_line_curposXYZE(float feed_rate, uint8_t extruder) { 
+	plan_buffer_line(current_position[X_AXIS], current_position[Y_AXIS], current_position[Z_AXIS], current_position[E_AXIS], feed_rate, extruder );
+}
+
 float junction_deviation = 0.1;
 // Add a new linear movement to the buffer. steps_x, _y and _z is the absolute position in 
 // mm. Microseconds specify how many microseconds the move should take to perform. To aid acceleration
 // calculation the caller must also provide the physical length of the line in millimeters.
-void plan_buffer_line(float x, float y, float z, const float &e, float feed_rate, const uint8_t &extruder)
+void plan_buffer_line(float x, float y, float z, const float &e, float feed_rate, uint8_t extruder)
 {
     // Calculate the buffer head after we push this byte
   int next_buffer_head = next_block_index(block_buffer_head);
@@ -764,7 +768,7 @@ void plan_buffer_line(float x, float y, float z, const float &e, float feed_rate
       de_float = 0;
 #endif
       SERIAL_ECHO_START;
-      SERIAL_ECHOLNRPGM(_n(" cold extrusion prevented"));////MSG_ERR_COLD_EXTRUDE_STOP c=0 r=0
+      SERIAL_ECHOLNRPGM(_n(" cold extrusion prevented"));////MSG_ERR_COLD_EXTRUDE_STOP
     }
     
     #ifdef PREVENT_LENGTHY_EXTRUDE
@@ -776,7 +780,7 @@ void plan_buffer_line(float x, float y, float z, const float &e, float feed_rate
         de_float = 0;
 #endif
       SERIAL_ECHO_START;
-      SERIAL_ECHOLNRPGM(_n(" too long extrusion prevented"));////MSG_ERR_LONG_EXTRUDE_STOP c=0 r=0
+      SERIAL_ECHOLNRPGM(_n(" too long extrusion prevented"));////MSG_ERR_LONG_EXTRUDE_STOP
     }
     #endif
   }

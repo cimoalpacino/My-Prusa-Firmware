@@ -94,7 +94,7 @@ void CardReader::lsDive(const char *prepend, SdFile parent, const char * const m
 				if (!dir.open(parent, lfilename, O_READ)) {
 					if (lsAction == LS_SerialPrint) {
 						//SERIAL_ECHO_START();
-						//SERIAL_ECHOPGM(_i("Cannot open subdir"));////MSG_SD_CANT_OPEN_SUBDIR c=0 r=0
+						//SERIAL_ECHOPGM(_i("Cannot open subdir"));////MSG_SD_CANT_OPEN_SUBDIR
 						//SERIAL_ECHOLN(lfilename);
 					}
 				}
@@ -137,8 +137,8 @@ void CardReader::lsDive(const char *prepend, SdFile parent, const char * const m
 						SERIAL_ECHOPGM("Access date: ");
 						MYSERIAL.println(p.lastAccessDate);
 						SERIAL_ECHOLNPGM("");*/
-						creationDate = p.creationDate;
-						creationTime = p.creationTime;
+						modificationDate = p.lastWriteDate;
+						modificationTime = p.lastWriteTime;
 						//writeDate = p.lastAccessDate;
 						if (match != NULL) {
 							if (strcasecmp(match, filename) == 0) return;
@@ -183,23 +183,23 @@ void CardReader::initsd()
   {
     //if (!card.init(SPI_HALF_SPEED,SDSS))
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNRPGM(_n("SD init fail"));////MSG_SD_INIT_FAIL c=0 r=0
+    SERIAL_ECHOLNRPGM(_n("SD init fail"));////MSG_SD_INIT_FAIL
   }
   else if (!volume.init(&card))
   {
     SERIAL_ERROR_START;
-    SERIAL_ERRORLNRPGM(_n("volume.init failed"));////MSG_SD_VOL_INIT_FAIL c=0 r=0
+    SERIAL_ERRORLNRPGM(_n("volume.init failed"));////MSG_SD_VOL_INIT_FAIL
   }
   else if (!root.openRoot(&volume)) 
   {
     SERIAL_ERROR_START;
-    SERIAL_ERRORLNRPGM(_n("openRoot failed"));////MSG_SD_OPENROOT_FAIL c=0 r=0
+    SERIAL_ERRORLNRPGM(_n("openRoot failed"));////MSG_SD_OPENROOT_FAIL
   }
   else 
   {
     cardOK = true;
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNRPGM(_n("SD card ok"));////MSG_SD_CARD_OK c=0 r=0
+    SERIAL_ECHOLNRPGM(_n("SD card ok"));////MSG_SD_CARD_OK
   }
   workDir=root;
   curDir=&root;
@@ -242,6 +242,7 @@ void CardReader::startFileprint()
   {
     sdprinting = true;
 	paused = false;
+     Stopped = false;
 	#ifdef SDCARD_SORT_ALPHA
 		//flush_presort();
 	#endif
@@ -418,13 +419,13 @@ void CardReader::openFile(const char* name,bool read, bool replace_current/*=tru
     if (file.open(curDir, fname, O_READ)) 
     {
       filesize = file.fileSize();
-      SERIAL_PROTOCOLRPGM(_N("File opened: "));////MSG_SD_FILE_OPENED c=0 r=0
+      SERIAL_PROTOCOLRPGM(_N("File opened: "));////MSG_SD_FILE_OPENED
       SERIAL_PROTOCOL(fname);
-      SERIAL_PROTOCOLRPGM(_n(" Size: "));////MSG_SD_SIZE c=0 r=0
+      SERIAL_PROTOCOLRPGM(_n(" Size: "));////MSG_SD_SIZE
       SERIAL_PROTOCOLLN(filesize);
       sdpos = 0;
       
-      SERIAL_PROTOCOLLNRPGM(_N("File selected"));////MSG_SD_FILE_SELECTED c=0 r=0
+      SERIAL_PROTOCOLLNRPGM(_N("File selected"));////MSG_SD_FILE_SELECTED
       getfilename(0, fname);
       lcd_setstatus(longFilename[0] ? longFilename : fname);
       lcd_setstatus("SD-PRINTING         ");
@@ -447,7 +448,7 @@ void CardReader::openFile(const char* name,bool read, bool replace_current/*=tru
     else
     {
       saving = true;
-      SERIAL_PROTOCOLRPGM(_N("Writing to file: "));////MSG_SD_WRITE_TO_FILE c=0 r=0
+      SERIAL_PROTOCOLRPGM(_N("Writing to file: "));////MSG_SD_WRITE_TO_FILE
       SERIAL_PROTOCOLLN(name);
       lcd_setstatus(fname);
     }
@@ -493,7 +494,7 @@ void CardReader::getStatus()
   if(sdprinting){
     SERIAL_PROTOCOL(longFilename);
     SERIAL_PROTOCOLPGM("\n");
-    SERIAL_PROTOCOLRPGM(_N("SD printing byte "));////MSG_SD_PRINTING_BYTE c=0 r=0
+    SERIAL_PROTOCOLRPGM(_N("SD printing byte "));////MSG_SD_PRINTING_BYTE
     SERIAL_PROTOCOL(sdpos);
     SERIAL_PROTOCOLPGM("/");
     SERIAL_PROTOCOLLN(filesize);
@@ -659,7 +660,7 @@ void CardReader::chdir(const char * relpath)
   if(!newfile.open(*parent,relpath, O_READ))
   {
    SERIAL_ECHO_START;
-   SERIAL_ECHORPGM(_n("Cannot enter subdir: "));////MSG_SD_CANT_ENTER_SUBDIR c=0 r=0
+   SERIAL_ECHORPGM(_n("Cannot enter subdir: "));////MSG_SD_CANT_ENTER_SUBDIR
    SERIAL_ECHOLN(relpath);
   }
   else
@@ -761,8 +762,8 @@ void CardReader::presort() {
 		#endif
 		#elif SDSORT_USES_STACK
 		char sortnames[fileCnt][LONG_FILENAME_LENGTH];
-		uint16_t creation_time[fileCnt];
-		uint16_t creation_date[fileCnt];
+		uint16_t modification_time[fileCnt];
+		uint16_t modification_date[fileCnt];
 		#endif
 
 		// Folder sorting needs 1 bit per entry for flags.
@@ -782,8 +783,8 @@ void CardReader::presort() {
 		// retaining only two filenames at a time. This is very
 		// slow but is safest and uses minimal RAM.
 		char name1[LONG_FILENAME_LENGTH + 1];
-		uint16_t creation_time_bckp;
-		uint16_t creation_date_bckp;
+		uint16_t modification_time_bckp;
+		uint16_t modification_date_bckp;
 
 		#endif
 		position = 0;
@@ -809,8 +810,8 @@ void CardReader::presort() {
 				#else
 				// Copy filenames into the static array
 				strcpy(sortnames[i], LONGEST_FILENAME);
-				creation_time[i] = creationTime;
-				creation_date[i] = creationDate;
+				modification_time[i] = modificationTime;
+				modification_date[i] = modificationDate;
 				#if SDSORT_CACHE_NAMES
 				strcpy(sortshort[i], filename);
 				#endif
@@ -835,12 +836,12 @@ void CardReader::presort() {
 			// Compare names from the array or just the two buffered names
 			#if SDSORT_USES_RAM
 			#define _SORT_CMP_NODIR() (strcasecmp(sortnames[o1], sortnames[o2]) > 0)
-			#define _SORT_CMP_TIME_NODIR() (((creation_date[o1] == creation_date[o2]) && (creation_time[o1] < creation_time[o2])) || \
-																	(creation_date[o1] < creation_date [o2]))
+ 			#define _SORT_CMP_TIME_NODIR() (((modification_date[o1] == modification_date[o2]) && (modification_time[o1] < modification_time[o2])) || \
+																	(modification_date[o1] < modification_date [o2]))
 			#else
 			#define _SORT_CMP_NODIR() (strcasecmp(name1, name2) > 0) //true if lowercase(name1) > lowercase(name2)
-			#define _SORT_CMP_TIME_NODIR() (((creation_date_bckp == creationDate) && (creation_time_bckp > creationTime)) || \
-																	(creation_date_bckp > creationDate))
+			#define _SORT_CMP_TIME_NODIR() (((modification_date_bckp == modificationDate) && (modification_time_bckp > modificationTime)) || \
+																	(modification_date_bckp > modificationDate))
 
 			#endif
 
@@ -891,8 +892,8 @@ void CardReader::presort() {
 					counter++;
 					getfilename_simple(positions[o1]);
 					strcpy(name1, LONGEST_FILENAME); // save (or getfilename below will trounce it)
-					creation_date_bckp = creationDate;
-					creation_time_bckp = creationTime;
+					modification_date_bckp = modificationDate;
+					modification_time_bckp = modificationTime;
 					#if HAS_FOLDER_SORTING
 					bool dir1 = filenameIsDir;
 					#endif

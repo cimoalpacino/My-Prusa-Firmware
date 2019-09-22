@@ -36,6 +36,7 @@ void adc_init(void)
 
 void adc_reset(void)
 {
+	//printf_P(PSTR("adc_RESET\n")); 
 	adc_state = 0;
 	adc_count = 0;
 	uint8_t i; for (i = 0; i < ADC_CHAN_CNT; i++)

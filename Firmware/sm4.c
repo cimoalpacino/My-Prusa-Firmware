@@ -55,6 +55,7 @@
 #define E_DIR INVERT_E0_DIR:!INVERT_E0_DIR
 uint8_t dir_mask = 0x0F^(INVERT_X_DIR | (INVERT_Y_DIR << 1) | (INVERT_Z_DIR << 2) | (INVERT_E0_DIR << 3));
 /*RAMPS*/
+
 sm4_stop_cb_t sm4_stop_cb = 0;
 
 sm4_update_pos_cb_t sm4_update_pos_cb = 0;

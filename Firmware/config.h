@@ -4,7 +4,7 @@
 
 //ADC configuration
 /*RAMPS*/
-#if (MOTHERBOARD == BOARD_RAMPS_14_EFB) || (defined(PINDA_THERMISTOR))
+#if (MOTHERBOARD == BOARD_RAMPS_14_EFB)
 	#ifdef PINDA_THERMISTOR
 		/* Ramps MKx with pinda thermistor */
 		#define ADC_CHAN_MSK      0b1110000000000000 //used AD channels bit mask (13 = TEMP_0_PIN, 14 = TEMP_BED_PIN, 15 = TEMP_1_PIN)
@@ -18,7 +18,6 @@
 		#define ADC_OVRSAMPL      16        //oversampling multiplier
 		#define ADC_CALLBACK      adc_ready //callback function ()
 	#endif // PINDA_THERMISTOR
-
 #else
 	#define ADC_CHAN_MSK      0b0000001001011111 //used AD channels bit mask (0,1,2,3,4,6,9)
 	#define ADC_CHAN_CNT      7         //number of used channels)
@@ -44,7 +43,6 @@
 	#define SWI2C_TMO         2048 //2048 cycles timeout
 #endif
 
-
 //PAT9125 configuration - Filament sensor
 /*RAMPS*/
 #if MOTHERBOARD == BOARD_RAMPS_14_EFB
@@ -64,8 +62,6 @@
 	#define PAT9125_XRES      0
 	#define PAT9125_YRES      240
 #endif
-
-
 
 //SM4 configuration - Stepper motion
 #define SM4_DEFDELAY      500       //default step delay [us]
@@ -88,11 +84,19 @@
 	#define W25X20CL_SPSR          SPI_SPSR(W25X20CL_SPI_RATE)
 #endif
 
+#include "boards.h"
+#include "Configuration_prusa.h"
+
 //LANG - Multi-language support
 /*RAMPS*/
-#define LANG_MODE              0 // primary language only
-//#define LANG_MODE              1 // sec. language support
-#define LANG_SIZE_RESERVED     0x2f00 // reserved space for secondary language (12032 bytes)
-
+#if MOTHERBOARD == BOARD_RAMPS_14_EFB
+	#define LANG_MODE              0 // primary language only
+	//#define LANG_MODE              1 // sec. language support
+	#define LANG_SIZE_RESERVED     0x2f00 // reserved space for secondary language (10240 bytes)
+#else
+	//#define LANG_MODE              0 // primary language only
+	#define LANG_MODE              1 // sec. language support
+	#define LANG_SIZE_RESERVED     0x3000 // reserved space for secondary language (12032 bytes)
+#endif
 
 #endif //_CONFIG_H

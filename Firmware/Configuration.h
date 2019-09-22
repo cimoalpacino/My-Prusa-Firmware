@@ -6,14 +6,26 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
+//-//
+#include <avr/pgmspace.h>
+extern const uint16_t _nPrinterType;
+extern const char _sPrinterName[] PROGMEM;
+extern const uint16_t _nPrinterMmuType;
+extern const char _sPrinterMmuName[] PROGMEM;
+extern uint16_t nPrinterType;
+extern PGM_P sPrinterName;
+
 // Firmware version
-#define FW_VERSION "3.7.0"
-#define FW_COMMIT_NR   2201
+#define FW_VERSION "3.8.0"
+#define FW_COMMIT_NR   2684
 // FW_VERSION_UNKNOWN means this is an unofficial build.
 // The firmware should only be checked into github with this symbol.
 #define FW_DEV_VERSION FW_VERSION_GOLD //FW_VERSION_UNKNOWN
-#define FW_REPOSITORY "cimoalpacino" /*RAMPS*/
+#define FW_REPOSITORY "Cimoalpacino"
 #define FW_VERSION_FULL FW_VERSION "-" STR(FW_COMMIT_NR)
+
+// G-code language level
+#define GCODE_LEVEL 1
 
 // Debug version has debugging enabled (the symbol DEBUG_BUILD is set).
 // The debug build may be a bit slower than the non-debug build, therefore the debug build should
@@ -279,6 +291,8 @@ your extruder heater takes 2 minutes to hit the target on heating.
 
 #define Z_HEIGHT_HIDE_LIVE_ADJUST_MENU 2.0f
 
+#define HOME_Z_SEARCH_THRESHOLD 0.15f             // Threshold of the Z height in calibration
+
 //============================= Bed Auto Leveling ===========================
 
 //#define ENABLE_AUTO_BED_LEVELING // Delete the comment to enable (remove // at the start of the line)
@@ -333,7 +347,7 @@ your extruder heater takes 2 minutes to hit the target on heating.
   // these are the offsets to the probe relative to the extruder tip (Hotend - Probe)
   // X and Y offsets must be integers
   #define X_PROBE_OFFSET_FROM_EXTRUDER -25
-  #define Y_PROBE_OFFSET_FROM_EXTRUDER -5
+  #define Y_PROBE_OFFSET_FROM_EXTRUDER -5 //-29
   #define Z_PROBE_OFFSET_FROM_EXTRUDER -12.35
 
   #define Z_RAISE_BEFORE_HOMING 4       // (in mm) Raise Z before homing (G28) for Probe Clearance.
@@ -437,10 +451,12 @@ your extruder heater takes 2 minutes to hit the target on heating.
 // M502 - reverts to the default "factory settings".  You still need to store them in EEPROM afterwards if you want to.
 //define this to enable EEPROM support
 /*RAMPS*/
-#define EEPROM_SETTINGS
+#if (MOTHERBOARD == BOARD_RAMPS_14_EFB)
+	#define EEPROM_SETTINGS
 //to disable EEPROM Serial responses and decrease program space by ~1700 byte: comment this out:
 // please keep turned on if you can.
-#define EEPROM_CHITCHAT
+	#define EEPROM_CHITCHAT
+#endif
 /*RAMPS*/
 
 // Host Keepalive
@@ -455,15 +471,25 @@ your extruder heater takes 2 minutes to hit the target on heating.
 
 //LCD and SD support
 #define SDSUPPORT // Enable SD Card Support in Hardware Console
+/*RAMPS*/
+#if (MOTHERBOARD == BOARD_RAMPS_14_EFB)
+#define SDSLOW // Use slower SD transfer mode (not normally needed - uncomment if you're getting volume init error)
+//#define SD_CHECK_AND_RETRY // Use CRC checks and retries on the SD communication
+#else
 //#define SDSLOW // Use slower SD transfer mode (not normally needed - uncomment if you're getting volume init error)
 #define SD_CHECK_AND_RETRY // Use CRC checks and retries on the SD communication
+#endif
+/*RAMPS*/
 #define ENCODER_PULSES_PER_STEP 4 // Increase if you have a high resolution encoder
 //#define ENCODER_STEPS_PER_MENU_ITEM 1 // Set according to ENCODER_PULSES_PER_STEP or your liking
 
 // The RepRapDiscount Smart Controller (white PCB)
 // http://reprap.org/wiki/RepRapDiscount_Smart_Controller
 /*RAMPS*/
-//#define REPRAP_DISCOUNT_SMART_CONTROLLER
+#if (MOTHERBOARD != BOARD_RAMPS_14_EFB)
+	#define REPRAP_DISCOUNT_SMART_CONTROLLER
+#endif
+/*RAMPS*/
 #define SDSUPPORT
 #define LCD_WIDTH 20
 #define LCD_HEIGHT 4
@@ -480,10 +506,15 @@ your extruder heater takes 2 minutes to hit the target on heating.
 // Use software PWM to drive the fan, as for the heaters. This uses a very low frequency
 // which is not ass annoying as with the hardware PWM. On the other hand, if this frequency
 // is too low, you should also increment SOFT_PWM_SCALE.
-/*RAMPS*/ //disable if necessary!
-//#define FAN_SOFT_PWM
-//#define FAN_SOFT_PWM_BITS 4 //PWM bit resolution = 4bits, freq = 62.5Hz
 /*RAMPS*/
+#if (MOTHERBOARD != BOARD_RAMPS_14_EFB)
+	#define FAN_SOFT_PWM
+	#define FAN_SOFT_PWM_BITS 4 //PWM bit resolution = 4bits, freq = 62.5Hz
+#endif
+/*RAMPS*/
+
+// Bed soft pwm
+#define HEATER_BED_SOFT_PWM_BITS 5 //PWM bit resolution = 5bits, freq = 31.25Hz
 
 // Incrementing this by 1 will double the software PWM frequency,
 // affecting heaters, and the fan if FAN_SOFT_PWM is enabled.

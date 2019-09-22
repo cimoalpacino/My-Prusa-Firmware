@@ -348,7 +348,7 @@ FORCE_INLINE unsigned short calc_timer(uint16_t step_rate) {
     timer = (unsigned short)pgm_read_word_near(table_address);
     timer -= (((unsigned short)pgm_read_word_near(table_address+2) * (unsigned char)(step_rate & 0x0007))>>3);
   }
-  if(timer < 100) { timer = 100; MYSERIAL.print(_N("Steprate too high: ")); MYSERIAL.println(step_rate); }//(20kHz this should never happen)////MSG_STEPPER_TOO_HIGH c=0 r=0
+  if(timer < 100) { timer = 100; MYSERIAL.print(_N("Steprate too high: ")); MYSERIAL.println(step_rate); }//(20kHz this should never happen)////MSG_STEPPER_TOO_HIGH
   return timer;
 }
 
@@ -1122,7 +1122,7 @@ void clear_current_adv_vars() {
 }
 
 #endif // LIN_ADVANCE
-      
+
 void st_init()
 {
 #ifdef TMC2130
@@ -1216,11 +1216,8 @@ void st_init()
     SET_INPUT(Z_TMC2130_DIAG);
     WRITE(Z_TMC2130_DIAG,HIGH);
 
-	/*RAMPS*/
-	if (E0_TMC2130_DIAG != -1) {
-		SET_INPUT(E0_TMC2130_DIAG);
-		WRITE(E0_TMC2130_DIAG, HIGH);
-	}
+	SET_INPUT(E0_TMC2130_DIAG);
+    WRITE(E0_TMC2130_DIAG,HIGH);
     
   #endif
     
@@ -1309,6 +1306,9 @@ void st_init()
       SET_OUTPUT(Z2_STEP_PIN);
       WRITE(Z2_STEP_PIN,INVERT_Z_STEP_PIN);
     #endif
+    #ifdef PSU_Delta
+      init_force_z();
+    #endif // PSU_Delta
     disable_z();
   #endif
   #if defined(E0_STEP_PIN) && (E0_STEP_PIN > -1)

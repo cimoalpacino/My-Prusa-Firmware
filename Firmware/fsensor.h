@@ -18,6 +18,7 @@ extern bool fsensor_oq_meassure_enabled;
 //! @name save restore printing
 //! @{
 extern void fsensor_stop_and_save_print(void);
+//! restore print - restore position and heatup to original temperature
 extern void fsensor_restore_print_and_continue(void);
 //! @}
 
@@ -45,12 +46,7 @@ extern void fsensor_setup_interrupt(void);
 extern void fsensor_autoload_check_start(void);
 extern void fsensor_autoload_check_stop(void);
 #endif //PAT9125
-/*RAMPS*/
 extern bool fsensor_check_autoload(void);
-//#ifdef IR_SENSOR
-//extern bool fsensor_check_autoload(void);
-//#endif //IR_SENSOR
-/*RAMPS*/
 //! @}
 
 //! @name optical quality measurement support

@@ -1,842 +1,677 @@
-//xyzcal.cpp - xyz calibration with image processing
-
-#include "Configuration_prusa.h"
-#ifdef NEW_XYZCAL
-
-#include "xyzcal.h"
-#include <avr/wdt.h>
-#include "stepper.h"
-#include "temperature.h"
-#include "sm4.h"
 
 
-#define XYZCAL_PINDA_HYST_MIN 20  //50um
-#define XYZCAL_PINDA_HYST_MAX 100 //250um
-#define XYZCAL_PINDA_HYST_DIF 5   //12.5um
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
 
-#define ENABLE_FANCHECK_INTERRUPT()  EIMSK |= (1<<7)
-#define DISABLE_FANCHECK_INTERRUPT() EIMSK &= ~(1<<7)
+ Copyright (C) 2007 Free Software Foundation, Inc. <http://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
 
-#define _PINDA ((READ(Z_MIN_PIN) != Z_MIN_ENDSTOP_INVERTING)?1:0)
+                            Preamble
 
-#define DBG(args...) printf_P(args)
-//#define DBG(args...)
-#ifndef _n
-#define _n PSTR
-#endif //_n
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
 
-#define _X ((int16_t)count_position[X_AXIS])
-#define _Y ((int16_t)count_position[Y_AXIS])
-#define _Z ((int16_t)count_position[Z_AXIS])
-#define _E ((int16_t)count_position[E_AXIS])
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+the GNU General Public License is intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.  We, the Free Software Foundation, use the
+GNU General Public License for most of our software; it applies also to
+any other work released this way by its authors.  You can apply it to
+your programs, too.
 
-#define _PI 3.14159265F
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
 
-uint8_t check_pinda_0();
-uint8_t check_pinda_1();
-void xyzcal_update_pos(uint16_t dx, uint16_t dy, uint16_t dz, uint16_t de);
-uint16_t xyzcal_calc_delay(uint16_t nd, uint16_t dd);
+  To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights.  Therefore, you have
+certain responsibilities if you distribute copies of the software, or if
+you modify it: responsibilities to respect the freedom of others.
 
+  For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received.  You must make sure that they, too, receive
+or can get the source code.  And you must show them these terms so they
+know their rights.
 
-void xyzcal_meassure_enter(void)
-{
-	DBG(_n("xyzcal_meassure_enter\n"));
-	disable_heater();
-	DISABLE_TEMPERATURE_INTERRUPT();
-#if (defined(FANCHECK) && defined(TACH_1) && (TACH_1 >-1))
-	DISABLE_FANCHECK_INTERRUPT();
-#endif //(defined(FANCHECK) && defined(TACH_1) && (TACH_1 >-1))
-	DISABLE_STEPPER_DRIVER_INTERRUPT();
-#ifdef WATCHDOG
-	wdt_disable();
-#endif //WATCHDOG
-	sm4_stop_cb = 0;
-	sm4_update_pos_cb = xyzcal_update_pos;
-	sm4_calc_delay_cb = xyzcal_calc_delay;
-}
+  Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
 
-void xyzcal_meassure_leave(void)
-{
-	DBG(_n("xyzcal_meassure_leave\n"));
-    planner_abort_hard();
-	ENABLE_TEMPERATURE_INTERRUPT();
-#if (defined(FANCHECK) && defined(TACH_1) && (TACH_1 >-1))
-	ENABLE_FANCHECK_INTERRUPT();
-#endif //(defined(FANCHECK) && defined(TACH_1) && (TACH_1 >-1))
-	ENABLE_STEPPER_DRIVER_INTERRUPT();
-#ifdef WATCHDOG
-	wdt_enable(WDTO_4S);
-#endif //WATCHDOG
-	sm4_stop_cb = 0;
-	sm4_update_pos_cb = 0;
-	sm4_calc_delay_cb = 0;
-}
+  For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software.  For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
 
+  Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the manufacturer
+can do so.  This is fundamentally incompatible with the aim of
+protecting users' freedom to change the software.  The systematic
+pattern of such abuse occurs in the area of products for individuals to
+use, which is precisely where it is most unacceptable.  Therefore, we
+have designed this version of the GPL to prohibit the practice for those
+products.  If such problems arise substantially in other domains, we
+stand ready to extend this provision to those domains in future versions
+of the GPL, as needed to protect the freedom of users.
 
-uint8_t check_pinda_0()
-{
-	return _PINDA?0:1;
-}
+  Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish to
+avoid the special danger that patents applied to a free program could
+make it effectively proprietary.  To prevent this, the GPL assures that
+patents cannot be used to render the program non-free.
 
-uint8_t check_pinda_1()
-{
-	return _PINDA?1:0;
-}
+  The precise terms and conditions for copying, distribution and
+modification follow.
 
-uint8_t xyzcal_dm = 0;
+                       TERMS AND CONDITIONS
 
-void xyzcal_update_pos(uint16_t dx, uint16_t dy, uint16_t dz, uint16_t)
-{
-//	DBG(_n("xyzcal_update_pos dx=%d dy=%d dz=%d dir=%02x\n"), dx, dy, dz, xyzcal_dm);
-	if (xyzcal_dm&1) count_position[0] -= dx; else count_position[0] += dx;
-	if (xyzcal_dm&2) count_position[1] -= dy; else count_position[1] += dy;
-	if (xyzcal_dm&4) count_position[2] -= dz; else count_position[2] += dz;
-//	DBG(_n(" after xyzcal_update_pos x=%ld y=%ld z=%ld\n"), count_position[0], count_position[1], count_position[2]);
-}
+  0. Definitions.
 
-uint16_t xyzcal_sm4_delay = 0;
+  "This License" refers to version 3 of the GNU General Public License.
 
-//#define SM4_ACCEL_TEST
-#ifdef SM4_ACCEL_TEST
-uint16_t xyzcal_sm4_v0 = 2000;
-uint16_t xyzcal_sm4_vm = 45000;
-uint16_t xyzcal_sm4_v = xyzcal_sm4_v0;
-uint16_t xyzcal_sm4_ac = 2000;
-uint16_t xyzcal_sm4_ac2 = (uint32_t)xyzcal_sm4_ac * 1024 / 10000;
-//float xyzcal_sm4_vm = 10000;
-#endif //SM4_ACCEL_TEST
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
 
-#ifdef SM4_ACCEL_TEST
-uint16_t xyzcal_calc_delay(uint16_t nd, uint16_t dd)
-{
-	uint16_t del_us = 0;
-	if (xyzcal_sm4_v & 0xf000) //>=4096
-	{
-		del_us = (uint16_t)62500 / (uint16_t)(xyzcal_sm4_v >> 4);
-		xyzcal_sm4_v += (xyzcal_sm4_ac2 * del_us + 512) >> 10;
-		if (xyzcal_sm4_v > xyzcal_sm4_vm) xyzcal_sm4_v = xyzcal_sm4_vm;
-		if (del_us > 25) return del_us - 25;
-	}
-	else
-	{
-		del_us = (uint32_t)1000000 / xyzcal_sm4_v;
-		xyzcal_sm4_v += ((uint32_t)xyzcal_sm4_ac2 * del_us + 512) >> 10;
-		if (xyzcal_sm4_v > xyzcal_sm4_vm) xyzcal_sm4_v = xyzcal_sm4_vm;
-		if (del_us > 50) return del_us - 50;
-	}
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
 
-//	uint16_t del_us = (uint16_t)(((float)1000000 / xyzcal_sm4_v) + 0.5);		
-//	uint16_t del_us = (uint32_t)1000000 / xyzcal_sm4_v;		
-//	uint16_t del_us = 100;		
-//	uint16_t del_us = (uint16_t)10000 / xyzcal_sm4_v;
-//	v += (ac * del_us + 500) / 1000;
-//	xyzcal_sm4_v += (xyzcal_sm4_ac * del_us) / 1000;
-//	return xyzcal_sm4_delay;
-//	DBG(_n("xyzcal_calc_delay nd=%d dd=%d v=%d  del_us=%d\n"), nd, dd, xyzcal_sm4_v, del_us);
-	return 0;
-}
-#else //SM4_ACCEL_TEST
-uint16_t xyzcal_calc_delay(uint16_t, uint16_t)
-{
-    return xyzcal_sm4_delay;
-}
-#endif //SM4_ACCEL_TEST
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
 
-bool xyzcal_lineXYZ_to(int16_t x, int16_t y, int16_t z, uint16_t delay_us, int8_t check_pinda)
-{
-//	DBG(_n("xyzcal_lineXYZ_to x=%d y=%d z=%d  check=%d\n"), x, y, z, check_pinda);
-	x -= (int16_t)count_position[0];
-	y -= (int16_t)count_position[1];
-	z -= (int16_t)count_position[2];
-	xyzcal_dm = ((x<0)?1:0) | ((y<0)?2:0) | ((z<0)?4:0);
-	sm4_set_dir_bits(xyzcal_dm);
-	sm4_stop_cb = check_pinda?((check_pinda<0)?check_pinda_0:check_pinda_1):0;
-	xyzcal_sm4_delay = delay_us;
-//	uint32_t u = _micros();
-	bool ret = sm4_line_xyze_ui(abs(x), abs(y), abs(z), 0)?true:false;
-//	u = _micros() - u;
-	return ret;
-}
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
 
-bool xyzcal_spiral2(int16_t cx, int16_t cy, int16_t z0, int16_t dz, int16_t radius, int16_t rotation, uint16_t delay_us, int8_t check_pinda, uint16_t* pad)
-{
-	bool ret = false;
-	float r = 0; //radius
-	uint8_t n = 0; //point number
-	uint16_t ad = 0; //angle [deg]
-	float ar; //angle [rad]
-	uint8_t dad = 0; //delta angle [deg]
-	uint8_t dad_min = 4; //delta angle min [deg]
-	uint8_t dad_max = 16; //delta angle max [deg]
-	uint8_t k = 720 / (dad_max - dad_min); //delta calculation constant
-	ad = 0;
-	if (pad) ad = *pad % 720;
-	DBG(_n("xyzcal_spiral2 cx=%d cy=%d z0=%d dz=%d radius=%d ad=%d\n"), cx, cy, z0, dz, radius, ad);
-	for (; ad < 720; ad++)
-	{
-		if (radius > 0)
-		{
-			dad = dad_max - (ad / k);
-			r = (float)(((uint32_t)ad) * radius) / 720;
-		}
-		else
-		{
-			dad = dad_max - ((719 - ad) / k);
-			r = (float)(((uint32_t)(719 - ad)) * (-radius)) / 720;
-		}
-		ar = (ad + rotation)* (float)_PI / 180;
-		float _cos = cos(ar);
-		float _sin = sin(ar);
-		int x = (int)(cx + (_cos * r));
-		int y = (int)(cy + (_sin * r));
-		int z = (int)(z0 - ((float)((int32_t)dz * ad) / 720));
-		if (xyzcal_lineXYZ_to(x, y, z, delay_us, check_pinda))
-		{
-			ad += dad + 1;
-			ret = true;
-			break;
-		}
-		n++;
-		ad += dad;
-	}
-	if (pad) *pad = ad;
-	return ret;
-}
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
 
-bool xyzcal_spiral8(int16_t cx, int16_t cy, int16_t z0, int16_t dz, int16_t radius, uint16_t delay_us, int8_t check_pinda, uint16_t* pad)
-{
-	bool ret = false;
-	uint16_t ad = 0;
-	if (pad) ad = *pad;
-	DBG(_n("xyzcal_spiral8 cx=%d cy=%d z0=%d dz=%d radius=%d ad=%d\n"), cx, cy, z0, dz, radius, ad);
-	if (!ret && (ad < 720))
-		if ((ret = xyzcal_spiral2(cx, cy, z0 - 0*dz, dz, radius, 0, delay_us, check_pinda, &ad)) != 0)
-			ad += 0;
-	if (!ret && (ad < 1440))
-		if ((ret = xyzcal_spiral2(cx, cy, z0 - 1*dz, dz, -radius, 0, delay_us, check_pinda, &ad)) != 0)
-			ad += 720;
-	if (!ret && (ad < 2160))
-		if ((ret = xyzcal_spiral2(cx, cy, z0 - 2*dz, dz, radius, 180, delay_us, check_pinda, &ad)) != 0)
-			ad += 1440;
-	if (!ret && (ad < 2880))
-		if ((ret = xyzcal_spiral2(cx, cy, z0 - 3*dz, dz, -radius, 180, delay_us, check_pinda, &ad)) != 0)
-			ad += 2160;
-	if (pad) *pad = ad;
-	return ret;
-}
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
 
-#ifdef XYZCAL_MEASSURE_PINDA_HYSTEREZIS
-int8_t xyzcal_meassure_pinda_hysterezis(int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t samples)
-{
-	DBG(_n("xyzcal_meassure_pinda_hysterezis\n"));
-	int8_t ret = -1; // PINDA signal error
-	int16_t z = _Z;
-	int16_t sum_up = 0;
-	int16_t sum_dn = 0;
-	int16_t up;
-	int16_t dn;
-	uint8_t sample;
-	xyzcal_lineXYZ_to(_X, _Y, min_z, delay_us, 1);
-	xyzcal_lineXYZ_to(_X, _Y, max_z, delay_us, -1);
-	if (!_PINDA)
-	{
-		for (sample = 0; sample < samples; sample++)
-		{
-			dn = _Z;
-			if (!xyzcal_lineXYZ_to(_X, _Y, min_z, delay_us, 1)) break;
-			dn = dn - _Z;
-			up = _Z;
-			if (!xyzcal_lineXYZ_to(_X, _Y, max_z, delay_us, -1)) break;
-			up = _Z - up;
-			DBG(_n("%d. up=%d dn=%d\n"), sample, up, dn);
-			sum_up += up;
-			sum_dn += dn;
-			if (abs(up - dn) > XYZCAL_PINDA_HYST_DIF)
-			{
-				ret = -2; // difference between up-dn to high
-				break;
-			}
-		}
-		if (sample == samples)
-		{
-			up = sum_up / samples;
-			dn = sum_dn / samples;
-			uint16_t hyst = (up + dn) / 2;
-			if (abs(up - dn) > XYZCAL_PINDA_HYST_DIF)
-				ret = -2; // difference between up-dn to high
-			else if ((hyst < XYZCAL_PINDA_HYST_MIN) || (hyst > XYZCAL_PINDA_HYST_MAX))
-				ret = -3; // hysterezis out of range
-			else
-				ret = hyst;
-		}
-	}
-	xyzcal_lineXYZ_to(_X, _Y, z, delay_us, 0);
-	return ret;
-}
-#endif //XYZCAL_MEASSURE_PINDA_HYSTEREZIS
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
 
+  1. Source Code.
 
-void xyzcal_scan_pixels_32x32(int16_t cx, int16_t cy, int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t* pixels)
-{
-	DBG(_n("xyzcal_scan_pixels_32x32 cx=%d cy=%d min_z=%d max_z=%d\n"), cx, cy, min_z, max_z);
-//	xyzcal_lineXYZ_to(cx - 1024, cy - 1024, max_z, 2*delay_us, 0);
-//	xyzcal_lineXYZ_to(cx, cy, max_z, delay_us, 0);
-	int16_t z = (int16_t)count_position[2];
-	xyzcal_lineXYZ_to(cx, cy, z, 2*delay_us, 0);
-	for (uint8_t r = 0; r < 32; r++)
-	{
-//		int8_t _pinda = _PINDA;
-		xyzcal_lineXYZ_to((r&1)?(cx+1024):(cx-1024), cy - 1024 + r*64, z, 2*delay_us, 0);
-		xyzcal_lineXYZ_to(_X, _Y, min_z, delay_us, 1);
-		xyzcal_lineXYZ_to(_X, _Y, max_z, delay_us, -1);
-		z = (int16_t)count_position[2];
-		sm4_set_dir(X_AXIS, (r&1)?1:0);
-		for (uint8_t c = 0; c < 32; c++)
-		{
-			uint16_t sum = 0;
-			int16_t z_sum = 0;
-			/*RAMPS*/
-			//uint8_t j = 0;
-			/*RAMPS*/
-			for (uint8_t i = 0; i < 64; i++)
-			{
-				int8_t pinda = _PINDA;
-				int16_t pix = z - min_z;
-				pix += (pinda)?23:-24;
-				if (pix < 0) pix = 0;
-				if (pix > 255) pix = 255;
-				sum += pix;
-				z_sum += z;
-//				if (_pinda != pinda)
-//				{
-//					if (pinda)
-//						DBG(_n("!1 x=%d z=%d\n"), c*64+i, z+23);
-//					else
-//						DBG(_n("!0 x=%d z=%d\n"), c*64+i, z-24);
-//				}
-				sm4_set_dir(Z_AXIS, !pinda);
-				if (!pinda)
-				{
-					if (z > min_z)
-					{
-						sm4_do_step(Z_AXIS_MASK);
-						z--;
-					}
-				}
-				else
-				{
-					if (z < max_z)
-					{
-						sm4_do_step(Z_AXIS_MASK);
-						z++;
-					}
-				}
-				/*RAMPS*/
-				// Crazy code to run X 4 of 5 times
-				//if (j<4)
-				//{
-				/*RAMPS*/
-				sm4_do_step(X_AXIS_MASK);
-				delayMicroseconds(600);
-//				_pinda = pinda;
-			}
-/*RAMPS*/
-/*        else 
-        {
-        j=0;
-        }
-        j++;
-        }
-        // Crazy code to run X 4 of 5 times
-*/        
-/*RAMPS*/
-			sum >>= 6; //div 64
-			if (z_sum < 0)
-			{
-				z_sum = -z_sum;
-				z_sum >>= 6; //div 64
-				z_sum = -z_sum;
-			}
-			else
-				z_sum >>= 6; //div 64
-			if (pixels) pixels[((uint16_t)r<<5) + ((r&1)?(31-c):c)] = sum;
-//			DBG(_n("c=%d r=%d l=%d z=%d\n"), c, r, sum, z_sum);
-			count_position[0] += (r&1)?-64:64;
-			count_position[2] = z;
-		}
-		if (pixels)
-			for (uint8_t c = 0; c < 32; c++)
-				DBG(_n("%02x"), pixels[((uint16_t)r<<5) + c]);
-		DBG(_n("\n"));
-	}
-//	xyzcal_lineXYZ_to(cx, cy, z, 2*delay_us, 0);
-}
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
 
-void xyzcal_histo_pixels_32x32(uint8_t* pixels, uint16_t* histo)
-{
-	for (uint8_t l = 0; l < 16; l++)
-		histo[l] = 0;
-	for (uint8_t r = 0; r < 32; r++)
-		for (uint8_t c = 0; c < 32; c++)
-		{
-			uint8_t pix = pixels[((uint16_t)r<<5) + c];
-			histo[pix >> 4]++;
-		}
-	for (uint8_t l = 0; l < 16; l++)
-		DBG(_n(" %2d %d\n"), l, histo[l]);
-}
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
 
-void xyzcal_adjust_pixels(uint8_t* pixels, uint16_t* histo)
-{
-	uint8_t l;
-	uint16_t max_c = histo[1];
-	uint8_t max_l = 1;
-	for (l = 1; l < 16; l++)
-	{
-		uint16_t c = histo[l];
-		if (c > max_c)
-		{
-			max_c = c;
-			max_l = l;
-		}
-	}
-	DBG(_n("max_c=%2d max_l=%d\n"), max_c, max_l);
-	for (l = 14; l > 8; l--)
-		if (histo[l] >= 10)
-			break;
-	uint8_t pix_min = 0;
-	uint8_t pix_max = l << 4;
-	if (histo[0] < (32*32 - 144))
-	{
-		pix_min = (max_l << 4) / 2;
-	}
-	uint8_t pix_dif = pix_max - pix_min;
-	DBG(_n(" min=%d max=%d dif=%d\n"), pix_min, pix_max, pix_dif);
-	for (int16_t i = 0; i < 32*32; i++)
-	{
-		uint16_t pix = pixels[i];
-		if (pix > pix_min) pix -= pix_min;
-		else pix = 0;
-		pix <<= 8;
-		pix /= pix_dif;
-//		if (pix < 0) pix = 0;
-		if (pix > 255) pix = 255;
-		pixels[i] = (uint8_t)pix;
-	}
-	for (uint8_t r = 0; r < 32; r++)
-	{
-		for (uint8_t c = 0; c < 32; c++)
-			DBG(_n("%02x"), pixels[((uint16_t)r<<5) + c]);
-		DBG(_n("\n"));
-	}
-}
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
 
-/*
-void xyzcal_draw_pattern_12x12_in_32x32(uint8_t* pattern, uint32_t* pixels, int w, int h, uint8_t x, uint8_t y, uint32_t and, uint32_t or)
-{
-	for (int i = 0; i < 8; i++)
-		for (int j = 0; j < 8; j++)
-		{
-			int idx = (x + j) + w * (y + i);
-			if (pattern[i] & (1 << j))
-			{
-				pixels[idx] &= and;
-				pixels[idx] |= or;
-			}
-		}
-}
-*/
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
 
-int16_t xyzcal_match_pattern_12x12_in_32x32(uint16_t* pattern, uint8_t* pixels, uint8_t c, uint8_t r)
-{
-	uint8_t thr = 16;
-	int16_t match = 0;
-	for (uint8_t i = 0; i < 12; i++)
-		for (uint8_t j = 0; j < 12; j++)
-		{
-			if (((i == 0) || (i == 11)) && ((j < 2) || (j >= 10))) continue; //skip corners
-			if (((j == 0) || (j == 11)) && ((i < 2) || (i >= 10))) continue;
-			uint16_t idx = (c + j) + 32 * (r + i);
-			uint8_t val = pixels[idx];
-			if (pattern[i] & (1 << j))
-			{
-				if (val > thr) match ++;
-				else match --;
-			}
-			else
-			{
-				if (val <= thr) match ++;
-				else match --;
-			}
-		}
-	return match;
-}
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
 
-int16_t xyzcal_find_pattern_12x12_in_32x32(uint8_t* pixels, uint16_t* pattern, uint8_t* pc, uint8_t* pr)
-{
-	uint8_t max_c = 0;
-	uint8_t max_r = 0;
-	int16_t max_match = 0;
-	for (uint8_t r = 0; r < (32 - 12); r++)
-		for (uint8_t c = 0; c < (32 - 12); c++)
-		{
-			int16_t match = xyzcal_match_pattern_12x12_in_32x32(pattern, pixels, c, r);
-			if (max_match < match)
-			{
-				max_c = c;
-				max_r = r;
-				max_match = match;
-			}
-		}
-	DBG(_n("max_c=%d max_r=%d max_match=%d\n"), max_c, max_r, max_match);
-	if (pc) *pc = max_c;
-	if (pr) *pr = max_r;
-	return max_match;
-}
+  The Corresponding Source for a work in source code form is that
+same work.
 
-#define MAX_DIAMETR 600
-#define XYZCAL_FIND_CENTER_DIAGONAL
+  2. Basic Permissions.
 
-int8_t xyzcal_find_point_center2(uint16_t delay_us)
-{
-	printf_P(PSTR("xyzcal_find_point_center2\n"));
-	int16_t x0 = _X;
-	int16_t y0 = _Y;
-	int16_t z0 = _Z;
-	printf_P(PSTR(" x0=%d\n"), x0);
-	printf_P(PSTR(" y0=%d\n"), y0);
-	printf_P(PSTR(" z0=%d\n"), z0);
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
 
-	xyzcal_lineXYZ_to(_X, _Y, z0 + 400, 500, -1);
-	xyzcal_lineXYZ_to(_X, _Y, z0 - 400, 500, 1);
-	xyzcal_lineXYZ_to(_X, _Y, z0 + 400, 500, -1);
-	xyzcal_lineXYZ_to(_X, _Y, z0 - 400, 500, 1);
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
 
-	z0 = _Z - 20;
-	xyzcal_lineXYZ_to(_X, _Y, z0, 500, 0);
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
 
-//	xyzcal_lineXYZ_to(x0, y0, z0 - 100, 500, 1);
-//	z0 = _Z;
-//	printf_P(PSTR("  z0=%d\n"), z0);
-//	xyzcal_lineXYZ_to(x0, y0, z0 + 100, 500, -1);
-//	z0 += _Z;
-//	z0 /= 2;
-	printf_P(PSTR("   z0=%d\n"), z0);
-//	xyzcal_lineXYZ_to(x0, y0, z0 - 100, 500, 1);
-//	z0 = _Z - 10;
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
 
-	int8_t ret = 1;
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
 
-#ifdef XYZCAL_FIND_CENTER_DIAGONAL
-	int32_t xc = 0;
-	int32_t yc = 0;
-	int16_t ad = 45;
-	for (; ad < 360; ad += 90)
-	{
-		float ar = (float)ad * _PI / 180;
-		int16_t x = x0 + MAX_DIAMETR * cos(ar);
-		int16_t y = y0 + MAX_DIAMETR * sin(ar);
-		if (!xyzcal_lineXYZ_to(x, y, z0, delay_us, -1))
-		{
-			printf_P(PSTR("ERROR ad=%d\n"), ad);
-			ret = 0;
-			break;
-		}
-		xc += _X;
-		yc += _Y;
-		xyzcal_lineXYZ_to(x0, y0, z0, delay_us, 0);
-	}
-	if (ret)
-	{
-		printf_P(PSTR("OK\n"), ad);
-		x0 = xc / 4;
-		y0 = yc / 4;
-		printf_P(PSTR(" x0=%d\n"), x0);
-		printf_P(PSTR(" y0=%d\n"), y0);
-	}
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
 
-#else //XYZCAL_FIND_CENTER_DIAGONAL
-	xyzcal_lineXYZ_to(x0 - MAX_DIAMETR, y0, z0, delay_us, -1);
-	int16_t dx1 = x0 - _X;
-	if (dx1 >= MAX_DIAMETR)
-	{
-		printf_P(PSTR("! dx1 = %d\n"), dx1);
-		return 0;
-	}
-	xyzcal_lineXYZ_to(x0, y0, z0, delay_us, 0);
-	xyzcal_lineXYZ_to(x0 + MAX_DIAMETR, y0, z0, delay_us, -1);
-	int16_t dx2 = _X - x0;
-	if (dx2 >= MAX_DIAMETR)
-	{
-		printf_P(PSTR("! dx2 = %d\n"), dx2);
-		return 0;
-	}
-	xyzcal_lineXYZ_to(x0, y0, z0, delay_us, 0);
-	xyzcal_lineXYZ_to(x0 , y0 - MAX_DIAMETR, z0, delay_us, -1);
-	int16_t dy1 = y0 - _Y;
-	if (dy1 >= MAX_DIAMETR)
-	{
-		printf_P(PSTR("! dy1 = %d\n"), dy1);
-		return 0;
-	}
-	xyzcal_lineXYZ_to(x0, y0, z0, delay_us, 0);
-	xyzcal_lineXYZ_to(x0, y0 + MAX_DIAMETR, z0, delay_us, -1);
-	int16_t dy2 = _Y - y0;
-	if (dy2 >= MAX_DIAMETR)
-	{
-		printf_P(PSTR("! dy2 = %d\n"), dy2);
-		return 0;
-	}
-	printf_P(PSTR("dx1=%d\n"), dx1);
-	printf_P(PSTR("dx2=%d\n"), dx2);
-	printf_P(PSTR("dy1=%d\n"), dy1);
-	printf_P(PSTR("dy2=%d\n"), dy2);
+  4. Conveying Verbatim Copies.
 
-	x0 += (dx2 - dx1) / 2;
-	y0 += (dy2 - dy1) / 2;
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
 
-	printf_P(PSTR(" x0=%d\n"), x0);
-	printf_P(PSTR(" y0=%d\n"), y0);
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
 
-#endif //XYZCAL_FIND_CENTER_DIAGONAL
+  5. Conveying Modified Source Versions.
 
-	xyzcal_lineXYZ_to(x0, y0, z0, delay_us, 0);
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
 
-	return ret;
-}
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
 
-#ifdef XYZCAL_FIND_POINT_CENTER
-int8_t xyzcal_find_point_center(int16_t x0, int16_t y0, int16_t z0, int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t turns)
-{
-	uint8_t n;
-	uint16_t ad;
-	float ar;
-	float _cos;
-	float _sin;
-	int16_t r_min = 0;
-	int16_t r_max = 0;
-	int16_t x_min = 0;
-	int16_t x_max = 0;
-	int16_t y_min = 0;
-	int16_t y_max = 0;
-	int16_t r = 10;
-	int16_t x = x0;
-	int16_t y = y0;
-	int16_t z = z0;
-	int8_t _pinda = _PINDA;
-	for (n = 0; n < turns; n++)
-	{
-		uint32_t r_sum = 0;
-		for (ad = 0; ad < 720; ad++)
-		{
-			ar = ad * _PI / 360;
-			_cos = cos(ar);
-			_sin = sin(ar);
-			x = x0 + (int)(_cos * r);
-			y = y0 + (int)(_sin * r);
-			xyzcal_lineXYZ_to(x, y, z, 1000, 0);
-			int8_t pinda = _PINDA;
-			if (pinda)
-				r += 1;
-			else
-			{
-				r -= 1;
-				ad--;
-				r_sum -= r;
-			}
-			if (ad == 0)
-			{
-				x_min = x0;
-				x_max = x0;
-				y_min = y0;
-				y_max = y0;
-				r_min = r;
-				r_max = r;
-			}
-			else if (pinda)
-			{
-				if (x_min > x) x_min = (2*x + x_min) / 3;
-				if (x_max < x) x_max = (2*x + x_max) / 3;
-				if (y_min > y) y_min = (2*y + y_min) / 3;
-				if (y_max < y) y_max = (2*y + y_max) / 3;
-/*				if (x_min > x) x_min = x;
-				if (x_max < x) x_max = x;
-				if (y_min > y) y_min = y;
-				if (y_max < y) y_max = y;*/
-				if (r_min > r) r_min = r;
-				if (r_max < r) r_max = r;
-			}
-			r_sum += r;
-/*			if (_pinda != pinda)
-			{
-				if (pinda)
-					DBG(_n("!1 x=%d y=%d\n"), x, y);
-				else
-					DBG(_n("!0 x=%d y=%d\n"), x, y);
-			}*/
-			_pinda = pinda;
-//			DBG(_n("x=%d y=%d rx=%d ry=%d\n"), x, y, rx, ry);
-		}
-		DBG(_n("x_min=%d x_max=%d y_min=%d y_max=%d r_min=%d r_max=%d r_avg=%d\n"), x_min, x_max, y_min, y_max, r_min, r_max, r_sum / 720);
-		if ((n > 2) && (n & 1))
-		{
-			x0 += (x_min + x_max);
-			y0 += (y_min + y_max);
-			x0 /= 3;
-			y0 /= 3;
-			int rx = (x_max - x_min) / 2;
-			int ry = (y_max - y_min) / 2;
-			r = (rx + ry) / 3;//(rx < ry)?rx:ry;
-			DBG(_n("x0=%d y0=%d r=%d\n"), x0, y0, r);
-		}
-	}
-	xyzcal_lineXYZ_to(x0, y0, z, 200, 0);
-}
-#endif //XYZCAL_FIND_POINT_CENTER
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
 
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
 
-uint8_t xyzcal_xycoords2point(int16_t x, int16_t y)
-{
-	uint8_t ix = (x > 10000)?1:0;
-	uint8_t iy = (y > 10000)?1:0;
-	return iy?(3-ix):ix;
-}
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
 
-//MK3
-#if ((MOTHERBOARD == BOARD_EINSY_1_0a))
-const int16_t xyzcal_point_xcoords[4] PROGMEM = {1200, 22000, 22000, 1200};
-const int16_t xyzcal_point_ycoords[4] PROGMEM = {600, 600, 19800, 19800};
-#endif //((MOTHERBOARD == BOARD_EINSY_1_0a))
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
 
-//MK2.5
-#if ((MOTHERBOARD == BOARD_RAMBO_MINI_1_0) || (MOTHERBOARD == BOARD_RAMBO_MINI_1_3))
-const int16_t xyzcal_point_xcoords[4] PROGMEM = {1200, 22000, 22000, 1200};
-const int16_t xyzcal_point_ycoords[4] PROGMEM = {700, 700, 19800, 19800};
-#endif //((MOTHERBOARD == BOARD_RAMBO_MINI_1_0) || (MOTHERBOARD == BOARD_RAMBO_MINI_1_3))
+  6. Conveying Non-Source Forms.
 
-/*RAMPS*/
-#if MOTHERBOARD == BOARD_RAMPS_14_EFB
-const int16_t xyzcal_point_xcoords[4] PROGMEM = { 1150, 21450, 21450, 1150 };
-const int16_t xyzcal_point_ycoords[4] PROGMEM = { 600, 600, 19750, 19750 }; 
-//const int16_t xyzcal_point_xcoords[4] PROGMEM = { bed_ref_points_4[0], bed_ref_points_4[2], bed_ref_points_4[4], bed_ref_points_4[6]};
-//const int16_t xyzcal_point_ycoords[4] PROGMEM = { bed_ref_points_4[1], bed_ref_points_4[3], bed_ref_points_4[5], bed_ref_points_4[6]}; 
-#endif //!MOTHERBOARD == BOARD_RAMPS_14_EFB
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
 
-const uint16_t xyzcal_point_pattern[12] PROGMEM = {0x000, 0x0f0, 0x1f8, 0x3fc, 0x7fe, 0x7fe, 0x7fe, 0x7fe, 0x3fc, 0x1f8, 0x0f0, 0x000};
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
 
-bool xyzcal_searchZ(void)
-{
-	DBG(_n("xyzcal_searchZ x=%ld y=%ld z=%ld\n"), count_position[X_AXIS], count_position[Y_AXIS], count_position[Z_AXIS]);
-	int16_t x0 = _X;
-	int16_t y0 = _Y;
-	int16_t z0 = _Z;
-//	int16_t min_z = -6000;
-//	int16_t dz = 100;
-	int16_t z = z0;
-	while (z > -2300) //-6mm + 0.25mm
-	{
-		uint16_t ad = 0;
-		if (xyzcal_spiral8(x0, y0, z, 100, 900, 320, 1, &ad)) //dz=100 radius=900 delay=400
-		{
-			int16_t x_on = _X;
-			int16_t y_on = _Y;
-			int16_t z_on = _Z;
-			DBG(_n(" ON-SIGNAL at x=%d y=%d z=%d ad=%d\n"), x_on, y_on, z_on, ad);
-			return true;
-		}
-		z -= 400;
-	}
-	DBG(_n("xyzcal_searchZ no signal\n x=%ld y=%ld z=%ld\n"), count_position[X_AXIS], count_position[Y_AXIS], count_position[Z_AXIS]);
-	return false;
-}
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
 
-bool xyzcal_scan_and_process(void)
-{
-	DBG(_n("sizeof(block_buffer)=%d\n"), sizeof(block_t)*BLOCK_BUFFER_SIZE);
-//	DBG(_n("sizeof(pixels)=%d\n"), 32*32);
-//	DBG(_n("sizeof(histo)=%d\n"), 2*16);
-//	DBG(_n("sizeof(pattern)=%d\n"), 2*12);
-	DBG(_n("sizeof(total)=%d\n"), 32*32+2*16+2*12);
-	bool ret = false;
-	int16_t x = _X;
-	int16_t y = _Y;
-	int16_t z = _Z;
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
 
-	uint8_t* pixels = (uint8_t*)block_buffer;
-	xyzcal_scan_pixels_32x32(x, y, z - 72, 2400, 200, pixels);
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
 
-	uint16_t* histo = (uint16_t*)(pixels + 32*32);
-	xyzcal_histo_pixels_32x32(pixels, histo);
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
 
-	xyzcal_adjust_pixels(pixels, histo);
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
 
-	uint16_t* pattern = (uint16_t*)(histo + 2*16);
-	for (uint8_t i = 0; i < 12; i++)
-	{
-		pattern[i] = pgm_read_word((uint16_t*)(xyzcal_point_pattern + i));
-		/*RAMPS*/
-		DBG(_n(" pattern[%d]=%d\n"), i, pattern[i]);
-		/*RAMPS*/
-	}
-	uint8_t c = 0;
-	uint8_t r = 0;
-	if (xyzcal_find_pattern_12x12_in_32x32(pixels, pattern, &c, &r) > 66) //total pixels=144, corner=12 (1/2 = 66)
-	{
-		DBG(_n(" pattern found at %d %d\n"), c, r);
-		c += 6;
-		r += 6;
-		x += ((int16_t)c - 16) << 6;
-		y += ((int16_t)r - 16) << 6;
-		DBG(_n(" x=%d y=%d z=%d\n"), x, y, z);
-		xyzcal_lineXYZ_to(x, y, z, 200, 0);
-		ret = true;
-	}
-	for (uint16_t i = 0; i < sizeof(block_t)*BLOCK_BUFFER_SIZE; i++)
-		pixels[i] = 0;
-	return ret;
-}
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
 
-bool xyzcal_find_bed_induction_sensor_point_xy(void)
-{
-	DBG(_n("xyzcal_find_bed_induction_sensor_point_xy x=%ld y=%ld z=%ld\n"), count_position[X_AXIS], count_position[Y_AXIS], count_position[Z_AXIS]);
-	bool ret = false;
-	st_synchronize();
-	int16_t x = _X;
-	int16_t y = _Y;
-	int16_t z = _Z;
-	uint8_t point = xyzcal_xycoords2point(x, y);
-	x = pgm_read_word((uint16_t*)(xyzcal_point_xcoords + point));
-	y = pgm_read_word((uint16_t*)(xyzcal_point_ycoords + point));
-	DBG(_n("point=%d x=%d y=%d z=%d\n"), point, x, y, z);
-	xyzcal_meassure_enter();
-	xyzcal_lineXYZ_to(x, y, z, 200, 0);
-	if (xyzcal_searchZ())
-	{
-		int16_t z = _Z;
-		xyzcal_lineXYZ_to(x, y, z, 200, 0);
-		if (xyzcal_scan_and_process())
-		{
-			if (xyzcal_find_point_center2(500))
-			{
-				uint32_t x_avg = 0;
-				uint32_t y_avg = 0;
-				uint8_t n; for (n = 0; n < 4; n++)
-				{
-					if (!xyzcal_find_point_center2(1000)) break;
-					x_avg += _X;
-					y_avg += _Y;	
-				}
-				if (n == 4)
-				{
-					xyzcal_lineXYZ_to(x_avg >> 2, y_avg >> 2, _Z, 200, 0);
-					ret = true;
-				}
-			}
-		}
-	}
-	xyzcal_meassure_leave();
-	return ret;
-}
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
 
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
 
-#endif //NEW_XYZCAL
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU General Public License from time to time.  Such new versions will
+be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    {one line to give the program's name and a brief idea of what it does.}
+    Copyright (C) {year}  {name of author}
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+    {project}  Copyright (C) {year}  {fullname}
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate
+parts of the General Public License.  Of course, your program's commands
+might be different; for a GUI interface, you would use an "about box".
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU GPL, see
+<http://www.gnu.org/licenses/>.
+
+  The GNU General Public License does not permit incorporating your program
+into proprietary programs.  If your program is a subroutine library, you
+may consider it more useful to permit linking proprietary applications with
+the library.  If this is what you want to do, use the GNU Lesser General
+Public License instead of this License.  But first, please read
+<http://www.gnu.org/philosophy/why-not-lgpl.html>.
+

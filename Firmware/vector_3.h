@@ -1,62 +1,45 @@
-/*
-  vector_3.cpp - Vector library for bed leveling
-  Copyright (c) 2012 Lars Brubaker.  All right reserved.
+//w25x20cl.h
+#ifndef _W25X20CL_H
+#define _W25X20CL_H
 
-  This library is free software; you can redistribute it and/or
-  modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
+#include <inttypes.h>
+#include "config.h"
+#include "spi.h"
 
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  Lesser General Public License for more details.
+/*RAMPS*/
+#if MOTHERBOARD != BOARD_RAMPS_14_EFB
+#define W25X20CL_STATUS_BUSY   0x01
+#define W25X20CL_STATUS_WEL    0x02
+#define W25X20CL_STATUS_BP0    0x04
+#define W25X20CL_STATUS_BP1    0x08
+#define W25X20CL_STATUS_TB     0x20
+#define W25X20CL_STATUS_SRP    0x80
 
-  You should have received a copy of the GNU Lesser General Public
-  License along with this library; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
-#ifndef VECTOR_3_H
-#define VECTOR_3_H
+#define W25X20CL_SPI_ENTER() spi_setup(W25X20CL_SPCR, W25X20CL_SPSR)
+#endif /*RAMPS*/
 
-#ifdef ENABLE_AUTO_BED_LEVELING
-class matrix_3x3;
-
-struct vector_3
-{
-	float x, y, z;
-
-        vector_3();
-	vector_3(float x, float y, float z);
-
-	static vector_3 cross(vector_3 a, vector_3 b);
-
-	vector_3 operator+(vector_3 v);
-	vector_3 operator-(vector_3 v);
-	void normalize();
-	float get_length();
-	vector_3 get_normal();
-
-	void debug(char* title);
-	
-	void apply_rotation(matrix_3x3 matrix);
-};
-
-struct matrix_3x3
-{
-	float matrix[9];
-
-	static matrix_3x3 create_from_rows(vector_3 row_0, vector_3 row_1, vector_3 row_2);
-	static matrix_3x3 create_look_at(vector_3 target);
-	static matrix_3x3 transpose(matrix_3x3 original);
-
-	void set_to_identity();
-
-	void debug(char* title);
-};
+#if defined(__cplusplus)
+extern "C" {
+#endif //defined(__cplusplus)
 
 
-void apply_rotation_xyz(matrix_3x3 rotationMatrix, float &x, float& y, float& z);
-#endif // ENABLE_AUTO_BED_LEVELING
+extern int8_t w25x20cl_init(void);
+extern void w25x20cl_enable_wr(void);
+extern void w25x20cl_disable_wr(void);
+extern uint8_t w25x20cl_rd_status_reg(void);
+extern void w25x20cl_wr_status_reg(uint8_t val);
+extern void w25x20cl_rd_data(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_page_program(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_page_program_P(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_sector_erase(uint32_t addr);
+extern void w25x20cl_block32_erase(uint32_t addr);
+extern void w25x20cl_block64_erase(uint32_t addr);
+extern void w25x20cl_chip_erase(void);
+extern void w25x20cl_page_program(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_rd_uid(uint8_t* uid);
+extern void w25x20cl_wait_busy(void);
 
-#endif // VECTOR_3_H
+#if defined(__cplusplus)
+}
+#endif //defined(__cplusplus)
+#endif //_W25X20CL_H
