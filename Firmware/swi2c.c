@@ -13,13 +13,13 @@
 #define SWI2C_ASHF   0x01 //address shift (<< 1)
 #define SWI2C_DMSK   0x7f //device address mask
 
-/*RAMPS*/
-#ifdef SWI2C
+
 void __delay(void)
 {
 	_delay_us(1.5);
 }
-
+/*RAMPS*/
+#ifdef SWI2C
 void swi2c_init(void)
 {
 	PIN_OUT(SWI2C_SDA);

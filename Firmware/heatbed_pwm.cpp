@@ -2,7 +2,6 @@
 #include <avr/interrupt.h>
 #include "io_atmega2560.h"
 
-
 // All this is about silencing the heat bed, as it behaves like a loudspeaker.
 // Basically, we want the PWM heating switched at 30Hz (or so) which is a well ballanced
 // frequency for both power supply units (i.e. both PSUs are reasonably silent).
@@ -90,6 +89,10 @@ static const uint8_t fastShift = 4;
 /// Due to the nature of bed heating the reduced PID precision may not be a major issue, however doing 8x less ISR(timer0_ovf) may significantly improve the performance 
 static const uint8_t slowInc = 1;
 
+#ifdef ENABLE_SYSTEM_TIMER_2
+#define SYSTEM_TIMER_2
+#endif
+
 #if (MOTHERBOARD == BOARD_RAMPS_14_EFB) && defined(SYSTEM_TIMER_2)
 ISR(TIMER4_OVF_vect)          // timer compare interrupt service routine
 {
@@ -116,8 +119,8 @@ ISR(TIMER4_OVF_vect)          // timer compare interrupt service routine
 		state = States::RISE;     // prepare for standard RISE cycles
 		fastCounter = fastMax - 1;// we'll do 16-1 cycles of RISE
 		TCNT4 = 255;              // force overflow on the next clock cycle
-		TCCR4B = (1 << CS40);     // change prescaler to 1, i.e. 62.5kHz
-		TCCR4A &= ~(1 << COM4C0); // Clear OC4C on Compare Match, set OC4C at BOTTOM (non-inverting mode)
+		TCCR4A &= ~(1 << COM4C0); // Clear OC4B on Compare Match, set OC4B at BOTTOM (non-inverting mode)
+		TCCR4B = (1 << CS40);	  // change prescaler to 1, i.e. 62.5kHz
 		break;
 	case States::RISE:
 		OCR4C = (fastMax - fastCounter) << fastShift;
@@ -135,7 +138,7 @@ ISR(TIMER4_OVF_vect)          // timer compare interrupt service routine
 		state = States::ONE;
 		OCR4C = 255;              // full duty
 		TCNT4 = 255;              // make the timer overflow in the next cycle
-		TCCR4B = (1 << CS41);     // change prescaler to 8, i.e. 7.8kHz 
+		TCCR4B = (1 << CS41);	  // change prescaler to 8, i.e. 7.8kHz
 		break;
 	case States::ONE:             // state ONE - we'll either stay in ONE or change to FALL
 		OCR4C = 255;
@@ -160,7 +163,7 @@ ISR(TIMER4_OVF_vect)          // timer compare interrupt service routine
 		TCCR4B = (1 << CS40);     // change prescaler to 1, i.e. 62.5kHz
 								  // must switch to inverting mode already here, because it takes a whole PWM cycle and it would make a "1" at the end of this pwm cycle
 								  // COM0B1 remains set both in inverting and non-inverting mode
-		TCCR4A |= (1 << COM4C0);  // inverting mode 
+		TCCR4A |= (1 << COM4C0);  // inverting mode
 		break;
 	case States::FALL:
 		OCR4C = (fastMax - fastCounter) << fastShift; // this is the same as in RISE, because now we are setting the zero part of duty due to inverting mode
@@ -182,10 +185,7 @@ ISR(TIMER4_OVF_vect)          // timer compare interrupt service routine
 		break;
 	}
 }
-
-
-
-#elif defined(SYSTEM_TIMER_2)
+#elif (MOTHERBOARD != BOARD_RAMPS_14_EFB)
 ISR(TIMER0_OVF_vect)          // timer compare interrupt service routine
 {
 	switch(state){

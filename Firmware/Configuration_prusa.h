@@ -1,21 +1,26 @@
 //***********************************************//
-//Suitable for Prusa MK2 clone and original MK25!//
+//Suitable for Prusa MK2S clone and original MK25!//
 //***********************************************//
 
 #ifndef CONFIGURATION_PRUSA_H
 #define CONFIGURATION_PRUSA_H
 
 #include <limits.h>
+#include "printers.h"
 /*------------------------------------
  GENERAL SETTINGS
  *------------------------------------*/
 
 // Enable to select 2.85mm. 
 // If not, 1.75mm settings are used.
-#define FILAMENT_3MM
+// #define FILAMENT_3MM
 
 // Printer revision
-#define PRINTER_TYPE PRINTER_MK2
+#define PRINTER_TYPE PRINTER_MK2S
+#define PRINTER_NAME PRINTER_MK2S_NAME
+#define PRINTER_MMU_TYPE PRINTER_MK2S_SNMM
+#define PRINTER_MMU_NAME PRINTER_MK2S_SNMM_NAME
+
 #ifdef FILAMENT_3MM		
 	#define FILAMENT_SIZE "2_85mm_MK2S"
 #else
@@ -38,7 +43,6 @@
 // GADGETS3D G3D LCD/SD Controller
 // http://reprap.org/wiki/RAMPS_1.3/1.4_GADGETS3D_Shield_with_Panel
 #define G3D_PANEL
-	
 #ifndef G3D_PANEL
 	#define REPRAP_DISCOUNT_SMART_CONTROLLER
 #endif // !G3D_PANEL
@@ -58,6 +62,8 @@
 	// New XYZ calibration
 	#define NEW_XYZCAL
 
+	#define ENABLE_SYSTEM_TIMER_2 //to enable timer02 (test)
+
 	#define HEATBED_V2
 	//#define STEEL_SHEET
 	//#define TACH0PULLUP
@@ -69,7 +75,10 @@
 
 
 	// Watchdog support
-	//#define WATCHDOG
+	// #define WATCHDOG /*r-test*/
+	
+	// Fan check
+	//#define FANCHECK
 
 	// TMC2130 drivers
 	//#define TMC2130	
@@ -138,6 +147,8 @@
 		#define DEFAULT_AXIS_STEPS_PER_UNIT   {100,100,3200/8,143} //2.85mm
 	#elif defined(FILAMENT_3MM)
 		#define DEFAULT_AXIS_STEPS_PER_UNIT   {CUSTOM_X_STEPS,CUSTOM_Y_STEPS,3200/8,143} //2.85mm
+	#elif defined(STEPS100)
+		#define DEFAULT_AXIS_STEPS_PER_UNIT   {100,100,3200/8,133} //1.75mm
 	#else
 		#define DEFAULT_AXIS_STEPS_PER_UNIT   {CUSTOM_X_STEPS,CUSTOM_Y_STEPS,3200/8,133} //1.75mm
 	#endif // STEPS100
@@ -206,9 +217,7 @@
 #define Z_PAUSE_LIFT 20
 
 #define NUM_AXIS 4 // The axis order in all axis related arrays is X, Y, Z, E
-
 #define HOMING_FEEDRATE {3000, 3000, 800, 0}  // set the homing speeds (mm/min) // 3000 is also valid for stallGuard homing. Valid range: 2200 - 3000
-// /*test*/ #define HOMING_FEEDRATE {3000, 3000, 400, 0}  // set the homing speeds (mm/min) // 3000 is also valid for stallGuard homing. Valid range: 2200 - 3000
 
 /**
  * [0,0] steel sheet print area point X coordinate in bed print area coordinates
@@ -238,6 +247,7 @@
 // Safety timer
 #define SAFETYTIMER
 #define DEFAULT_SAFETYTIMER_TIME_MINS 30
+#define FARM_DEFAULT_SAFETYTIMER_TIME_ms (45*60*1000ul)
 
 #define DEBUG_DCODE3 //D code for EEPROM
 
@@ -310,9 +320,9 @@
 #define  DEFAULT_Kd 73.76
 #else
 // Define PID constants for extruder
-#define  DEFAULT_Kp 32.77
-#define  DEFAULT_Ki 4.83
-#define  DEFAULT_Kd 55.60
+#define  DEFAULT_Kp 20 //32.77
+#define  DEFAULT_Ki 0.4 //4.83
+#define  DEFAULT_Kd 50 //55.60
 
 #endif
 
@@ -380,6 +390,13 @@
  ADDITIONAL FEATURES SETTINGS
  *------------------------------------*/
 
+// Define Prusa filament runout sensor
+//#define FILAMENT_RUNOUT_SUPPORT
+
+#ifdef FILAMENT_RUNOUT_SUPPORT
+	#define FILAMENT_RUNOUT_SENSOR 1
+#endif
+
 // temperature runaway
 #define TEMP_RUNAWAY_BED_HYSTERESIS 5
 #define TEMP_RUNAWAY_BED_TIMEOUT 360
@@ -423,10 +440,17 @@
 #define MBL_Z_STEP 0.01
 
 // Mesh definitions
+#if MOTHERBOARD == BOARD_RAMPS_14_EFB
 #define MESH_MIN_X 35
 #define MESH_MAX_X 239  //238
 #define MESH_MIN_Y 8 //6
 #define MESH_MAX_Y 202
+#else
+#define MESH_MIN_X 24
+#define MESH_MAX_X 228
+#define MESH_MIN_Y 6
+#define MESH_MAX_Y 210
+#endif
 
 // Mesh upsample definition
 #define MESH_NUM_X_POINTS 7
@@ -439,7 +463,7 @@
 #define BED_ADJUSTMENT_UM_MAX 100
 
 #define MESH_HOME_Z_CALIB 0.2
-#define MESH_HOME_Z_SEARCH 5 //Z lift for homing, mesh bed leveling etc.
+#define MESH_HOME_Z_SEARCH 5.0f //Z lift for homing, mesh bed leveling etc.
 
 #if MOTHERBOARD == BOARD_RAMPS_14_EFB  //CHECK BEFORE COMPILING!
 	//for Prusa Bear upgrade:
@@ -489,9 +513,18 @@
 #define  DEFAULT_bedKi 1.60
 #define  DEFAULT_bedKd 73.76
 #else
-#define  DEFAULT_bedKp 89.33
-#define  DEFAULT_bedKi 3.81
-#define  DEFAULT_bedKd 524.17
+#if MOTHERBOARD == BOARD_RAMPS_14_EFB
+//#define  DEFAULT_bedKp 89.33
+//#define  DEFAULT_bedKi 3.81
+//#define  DEFAULT_bedKd 524.17
+#define  DEFAULT_bedKp 109.69
+#define  DEFAULT_bedKi 4.87
+#define  DEFAULT_bedKd 617.80
+#else
+#define  DEFAULT_bedKp 126.13
+#define  DEFAULT_bedKi 4.30
+#define  DEFAULT_bedKd 924.76
+#endif
 #endif
 
 //120v 250W silicone heater into 4mm borosilicate (MendelMax 1.5+)
@@ -516,11 +549,15 @@
 #define PREHEAT_HPB_TEMP 60
 #define PREHEAT_FAN_SPEED 0
 
-#define PLA_PREHEAT_HOTEND_TEMP 210 //215
+#define PLA_PREHEAT_HOTEND_TEMP 215
 #define PLA_PREHEAT_HPB_TEMP 60
 #define PLA_PREHEAT_FAN_SPEED 0
 
-#define ABS_PREHEAT_HOTEND_TEMP 230 //255
+#define ASA_PREHEAT_HOTEND_TEMP 260
+#define ASA_PREHEAT_HPB_TEMP 105
+#define ASA_PREHEAT_FAN_SPEED 0
+
+#define ABS_PREHEAT_HOTEND_TEMP 255
 #define ABS_PREHEAT_HPB_TEMP 100
 #define ABS_PREHEAT_FAN_SPEED 0
 
@@ -647,5 +684,8 @@
 //#define MMU_HAS_CUTTER
 
 #define MMU_IDLER_SENSOR_ATTEMPTS_NR 21 //max. number of attempts to load filament if first load failed; value for max bowden length and case when loading fails right at the beginning
+
+//#define HEATBED_ANALYSIS //for meash bed leveling and heatbed analysis D-codes D80 and D81
+//#define MICROMETER_LOGGING //related to D-codes D80 and D81, currently works on MK2.5 only (MK3 board pin definitions missing)
 
 #endif //__CONFIGURATION_PRUSA_H

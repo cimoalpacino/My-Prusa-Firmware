@@ -2791,7 +2791,7 @@ bool sample_z() {
 	//#ifdef STEEL_SHEET
 	lcd_show_fullscreen_message_and_wait_P(_T(MSG_PLACE_STEEL_SHEET));
 	//#endif // STEEL_SHEET
-	
+
 	// Sample Z heights for the mesh bed leveling.
 	// In addition, store the results into an eeprom, to be used later for verification of the bed leveling process.
 	if (!sample_mesh_and_store_reference()) sampled = false;

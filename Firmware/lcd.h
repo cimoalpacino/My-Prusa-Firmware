@@ -11,6 +11,8 @@
 extern FILE _lcdout;
 
 #define lcdout (&_lcdout)
+/*RAMPS*/ //commit 2480bd9
+//extern void lcd_putchar(char c, FILE *stream);
 
 extern void lcd_init(void);
 

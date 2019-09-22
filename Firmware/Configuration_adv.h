@@ -327,9 +327,7 @@ const unsigned int dropsegments=5; //everything with less than this number of st
 // in the pins.h file.  When using a push button pulling the pin to ground this will need inverted.  This setting should
 // be commented out otherwise
 #define SDCARDDETECTINVERTED
-/*RAMPS*/
 #undef SDCARDDETECTINVERTED
-/*RAMPS*/
 
 // Power Signal Control Definitions
 // By default use ATX definition

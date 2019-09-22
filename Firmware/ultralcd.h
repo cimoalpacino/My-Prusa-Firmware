@@ -1,602 +1,242 @@
-#include "Configuration.h"
+#ifndef ULTRALCD_H
+#define ULTRALCD_H
 
-#include "ultralcd.h"
-#include "sound.h"
-#include "language.h"
-#include "util.h"
+#include "Marlin.h"
+#include "lcd.h"
+#include "conv2str.h"
+#include "menu.h"
+#include "mesh_bed_calibration.h"
 
-// Allocate the version string in the program memory. Otherwise the string lands either on the stack or in the global RAM.
-const char FW_VERSION_STR[] PROGMEM = FW_VERSION;
+extern void menu_lcd_longpress_func(void);
+extern void menu_lcd_charsetup_func(void);
+extern void menu_lcd_lcdupdate_func(void);
 
-const char* FW_VERSION_STR_P()
-{
-    return FW_VERSION_STR;
-}
+// Call with a false parameter to suppress the LCD update from various places like the planner or the temp control.
+void ultralcd_init();
+void lcd_setstatus(const char* message);
+void lcd_setstatuspgm(const char* message);
+//! return to the main status screen and display the alert message
+//! Beware - it has sideeffects:
+//! - always returns the display to the main status screen
+//! - always makes lcd_reset (which is slow and causes flicker)
+//! - does not update the message if there is already one (i.e. lcd_status_message_level > 0)
+void lcd_setalertstatuspgm(const char* message);
+//! only update the alert message on the main status screen
+//! has no sideeffects, may be called multiple times
+void lcd_updatestatuspgm(const char *message);
 
-const char FW_PRUSA3D_MAGIC_STR[] PROGMEM = FW_PRUSA3D_MAGIC;
+void lcd_reset_alert_level();
+uint8_t get_message_level();
+void lcd_adjust_z();
+void lcd_pick_babystep();
+void lcd_alright();
+void show_preheat_nozzle_warning();
+void EEPROM_save_B(int pos, int* value);
+void EEPROM_read_B(int pos, int* value);
+void lcd_wait_interact();
+void lcd_loading_filament();
+void lcd_change_success();
+void lcd_loading_color();
+void lcd_sdcard_stop();
+void lcd_pause_print();
+void lcd_resume_print();
+void lcd_print_stop();
+void prusa_statistics(int _message, uint8_t _col_nr = 0);
+void lcd_confirm_print();
+unsigned char lcd_choose_color();
+void lcd_load_filament_color_check();
+//void lcd_mylang();
 
-const char* FW_PRUSA3D_MAGIC_STR_P()
-{
-    return FW_PRUSA3D_MAGIC_STR;
-}
+extern bool lcd_selftest();
 
-const char STR_REVISION_DEV  [] PROGMEM = "dev";
-const char STR_REVISION_ALPHA[] PROGMEM = "alpha";
-const char STR_REVISION_BETA [] PROGMEM = "beta";
-const char STR_REVISION_RC   [] PROGMEM = "rc";
+void lcd_menu_statistics(); 
 
-inline bool is_whitespace_or_nl(char c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
-inline bool is_whitespace_or_nl_or_eol(char c)
-{
-    return c == 0 || c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
-inline bool is_digit(char c)
-{
-    return c >= '0' && c <= '9';
-}
-
-// Parse a major.minor.revision version number.
-// Return true if valid.
-inline bool parse_version(const char *str, uint16_t version[4])
-{   
-#if 0
-    SERIAL_ECHOPGM("Parsing version string ");
-    SERIAL_ECHO(str);
-    SERIAL_ECHOLNPGM("");
+void lcd_menu_extruder_info();                    // NOT static due to using inside "Marlin_main" module ("manage_inactivity()")
+void lcd_menu_show_sensors_state();               // NOT static due to using inside "Marlin_main" module ("manage_inactivity()")
+#ifdef TMC2130
+bool lcd_crash_detect_enabled();
+void lcd_crash_detect_enable();
+void lcd_crash_detect_disable();
 #endif
 
-    const char *major = str;
-    const char *p = str;
-    while (is_digit(*p)) ++ p;
-    if (*p != '.')
-        return false;
-    const char *minor = ++ p;
-    while (is_digit(*p)) ++ p;
-    if (*p != '.')
-        return false;
-    const char *rev = ++ p;
-    while (is_digit(*p)) ++ p;
-    if (! is_whitespace_or_nl_or_eol(*p) && *p != '-')
-        return false;
+extern const char* lcd_display_message_fullscreen_P(const char *msg, uint8_t &nlines);
+extern const char* lcd_display_message_fullscreen_P(const char *msg);
 
-    char *endptr = NULL;
-    version[0] = strtol(major, &endptr, 10);
-    if (endptr != minor - 1)
-        return false;
-    version[1] = strtol(minor, &endptr, 10);
-    if (endptr != rev - 1)
-        return false;
-    version[2] = strtol(rev, &endptr, 10);
-    if (endptr != p)
-        return false;
+extern void lcd_return_to_status();
+extern void lcd_wait_for_click();
+extern bool lcd_wait_for_click_delay(uint16_t nDelay);
+extern void lcd_show_fullscreen_message_and_wait_P(const char *msg);
+// 0: no, 1: yes, -1: timeouted
+extern int8_t lcd_show_fullscreen_message_yes_no_and_wait_P(const char *msg, bool allow_timeouting = true, bool default_yes = false);
+extern int8_t lcd_show_multiscreen_message_two_choices_and_wait_P(const char *msg, bool allow_timeouting, bool default_yes,
+        const char *first_choice, const char *second_choice);
+extern int8_t lcd_show_multiscreen_message_yes_no_and_wait_P(const char *msg, bool allow_timeouting = true, bool default_yes = false);
+// Ask the user to move the Z axis up to the end stoppers and let
+// the user confirm that it has been done.
 
-    version[3] = FIRMWARE_REVISION_RELEASED;
-    if (*p ++ == '-') {
-        const char *q = p;
-        while (! is_whitespace_or_nl_or_eol(*q))
-            ++ q;
-        uint8_t n = q - p;
-        if (n == strlen_P(STR_REVISION_DEV) && strncmp_P(p, STR_REVISION_DEV, n) == 0)
-            version[3] = FIRMWARE_REVISION_DEV;
-        else if (n == strlen_P(STR_REVISION_ALPHA) && strncmp_P(p, STR_REVISION_ALPHA, n) == 0)
-            version[3] = FIRMWARE_REVISION_ALPHA;
-        else if (n == strlen_P(STR_REVISION_BETA) && strncmp_P(p, STR_REVISION_BETA, n) == 0)
-            version[3] = FIRMWARE_REVISION_BETA;
-        else if ((n == 2 || n == 3) && (p[0] == 'r' || p[0] == 'R') && (p[1] == 'c' || p[1] == 'C')) {
-            if (n == 2)
-                version[3] = FIRMWARE_REVISION_RC;
-            else {
-                if (is_digit(p[2]))
-                    version[3] = FIRMWARE_REVISION_RC + p[2] - '1';
-                else
-                    return false;
-            }
-        } else
-            return false;
-    }
-
-#if 0
-    SERIAL_ECHOPGM("Version parsed, major: ");
-    SERIAL_ECHO(version[0]);
-    SERIAL_ECHOPGM(", minor: ");
-    SERIAL_ECHO(version[1]);
-    SERIAL_ECHOPGM(", revision: ");
-    SERIAL_ECHO(version[2]);
-    SERIAL_ECHOPGM(", flavor: ");
-    SERIAL_ECHO(version[3]);
-    SERIAL_ECHOLNPGM("");
-#endif
-    return true;
-}
-
-inline bool strncmp_PP(const char *p1, const char *p2, uint8_t n)
-{
-    for (; n > 0; -- n, ++ p1, ++ p2) {
-		if (pgm_read_byte(p1) >= 65 && pgm_read_byte(p1) <= 92) //p1 is upper case (p2 is always lowercase)
-		{
-			if ((pgm_read_byte(p1)+32) < pgm_read_byte(p2))
-				return -1;
-			if ((pgm_read_byte(p1)+32) > pgm_read_byte(p2))
-				return 1;
-		}
-		else if (pgm_read_byte(p1) == 0) {
-			return 0;
-		}
-		else { //p1 is lowercase
-			if (pgm_read_byte(p1) < pgm_read_byte(p2))
-				return -1;
-			if (pgm_read_byte(p1) > pgm_read_byte(p2))
-				return 1;
-		}            
-    }
-    return 0;
-}
-
-// Parse a major.minor.revision version number.
-// Return true if valid.
-inline bool parse_version_P(const char *str, uint16_t version[4])
-{    
-#if 0
-    SERIAL_ECHOPGM("Parsing version string ");
-    SERIAL_ECHORPGM(str);
-    SERIAL_ECHOLNPGM("");
+#ifndef TMC2130
+extern bool lcd_calibrate_z_end_stop_manual(bool only_z);
 #endif
 
-    const char *major = str;
-    const char *p = str;
-    while (is_digit(char(pgm_read_byte(p)))) ++ p;
-    if (pgm_read_byte(p) != '.')
-        return false;
-    const char *minor = ++ p;
-    while (is_digit(char(pgm_read_byte(p)))) ++ p;
-    if (pgm_read_byte(p) != '.')
-        return false;
-    const char *rev = ++ p;
-    while (is_digit(char(pgm_read_byte(p)))) ++ p;
-    if (! is_whitespace_or_nl_or_eol(char(pgm_read_byte(p))) && pgm_read_byte(p) != '-')
-        return false;
+// Show the result of the calibration process on the LCD screen.
+  extern void lcd_bed_calibration_show_result(BedSkewOffsetDetectionResultType result, uint8_t point_too_far_mask);
 
-    char buf[5];
-    uint8_t n = minor - major - 1;
-    if (n > 4)
-        return false;
-    memcpy_P(buf, major, n); buf[n] = 0;
-    char *endptr = NULL;
-    version[0] = strtol(buf, &endptr, 10);
-    if (*endptr != 0)
-        return false;
-    n = rev - minor - 1;
-    if (n > 4)
-        return false;
-    memcpy_P(buf, minor, n); buf[n] = 0;
-    version[1] = strtol(buf, &endptr, 10);
-    if (*endptr != 0)
-        return false;
-    n = p - rev;
-    if (n > 4)
-        return false;
-    memcpy_P(buf, rev, n);
-    buf[n] = 0;
-    version[2] = strtol(buf, &endptr, 10);
-    if (*endptr != 0)
-        return false;
+extern void lcd_diag_show_end_stops();
 
-    version[3] = FIRMWARE_REVISION_RELEASED;
-    if (pgm_read_byte(p ++) == '-') {
-        const char *q = p;
-        while (! is_whitespace_or_nl_or_eol(char(pgm_read_byte(q))))
-            ++ q;
-        n = q - p;
-        if (n == strlen_P(STR_REVISION_DEV) && strncmp_PP(p, STR_REVISION_DEV, n) == 0)
-            version[3] = FIRMWARE_REVISION_DEV;
-        else if (n == strlen_P(STR_REVISION_ALPHA) && strncmp_PP(p, STR_REVISION_ALPHA, n) == 0)
-            version[3] = FIRMWARE_REVISION_ALPHA;
-        else if (n == strlen_P(STR_REVISION_BETA) && strncmp_PP(p, STR_REVISION_BETA, n) == 0)
-            version[3] = FIRMWARE_REVISION_BETA;
-        else if ((n == 2 || n == 3) && strncmp_PP(p, STR_REVISION_RC, 2) == 0) {
-            if (n == 2)
-                version[3] = FIRMWARE_REVISION_RC;
-            else {
-                p += 2;
-                if (is_digit(pgm_read_byte(p)))
-                    version[3] = FIRMWARE_REVISION_RC + pgm_read_byte(p) - '1';
-                else
-                    return false;
-            }
-        } else
-            return false;
-    }
 
-#if 0
-    SERIAL_ECHOPGM("Version parsed, major: ");
-    SERIAL_ECHO(version[0]);
-    SERIAL_ECHOPGM(", minor: ");
-    SERIAL_ECHO(version[1]);
-    SERIAL_ECHOPGM(", revision: ");
-    SERIAL_ECHO(version[2]);
-    SERIAL_ECHOPGM(", flavor: ");
-    SERIAL_ECHO(version[3]);
-    SERIAL_ECHOLNPGM("");
+#define LCD_MESSAGEPGM(x) lcd_setstatuspgm(PSTR(x))
+#define LCD_ALERTMESSAGEPGM(x) lcd_setalertstatuspgm(PSTR(x))
+#define LCD_MESSAGERPGM(x) lcd_setstatuspgm((x))
+#define LCD_ALERTMESSAGERPGM(x) lcd_setalertstatuspgm((x))
+
+
+// To be used in lcd_commands_type.
+enum class LcdCommands : uint_least8_t
+{
+	Idle,
+	LoadFilament,
+	StopPrint,
+	FarmModeConfirm,
+	LongPause,
+	PidExtruder,
+	Layer1Cal,
+};
+
+extern LcdCommands lcd_commands_type;
+extern int8_t FSensorStateMenu;
+
+enum class CustomMsg : uint_least8_t
+{
+	Status,          //!< status message from lcd_status_message variable
+	MeshBedLeveling, //!< Mesh bed leveling in progress
+	FilamentLoading, //!< Loading filament in progress
+	PidCal,          //!< PID tuning in progress
+	TempCal,         //!< PINDA temperature calibration
+	TempCompPreheat, //!< Temperature compensation preheat
+};
+
+extern CustomMsg custom_message_type;
+extern unsigned int custom_message_state;
+
+extern uint8_t farm_mode;
+extern int farm_no;
+extern int farm_timer;
+extern uint8_t farm_status;
+
+#ifdef TMC2130
+#define SILENT_MODE_NORMAL 0
+#define SILENT_MODE_STEALTH 1
+#define SILENT_MODE_OFF SILENT_MODE_NORMAL
+#else
+#define SILENT_MODE_POWER 0
+#define SILENT_MODE_SILENT 1
+#define SILENT_MODE_AUTO 2
+#define SILENT_MODE_OFF SILENT_MODE_POWER
 #endif
-    return true;
-}
 
-// 1 - yes, 0 - false, -1 - error;
-inline int8_t is_provided_version_newer(const char *version_string)
+extern int8_t SilentModeMenu;
+extern uint8_t SilentModeMenu_MMU;
+
+extern bool cancel_heatup;
+extern bool isPrintPaused;
+
+
+void lcd_ignore_click(bool b=true);
+void lcd_commands();
+
+
+extern bool bSettings;                            // flag (i.e. 'fake parameter') for 'lcd_hw_setup_menu()' function
+void lcd_hw_setup_menu(void);                     // NOT static due to using inside "util" module ("nozzle_diameter_check()")
+
+
+void change_extr(int extr);
+
+#ifdef SNMM
+void extr_unload_all(); 
+void extr_unload_used();
+#endif //SNMM
+void extr_unload();
+
+enum class FilamentAction : uint_least8_t
 {
-    uint16_t ver_gcode[4], ver_current[4];
-    if (! parse_version(version_string, ver_gcode))
-        return -1;
-    if (! parse_version_P(FW_VERSION_STR, ver_current))
-        return 0; // this shall not happen
-    for (uint8_t i = 0; i < 3; ++ i)
-        if (ver_gcode[i] > ver_current[i])
-            return 1;
-    return 0;
-}
+    None, //!< 'none' state is used as flag for (filament) autoLoad (i.e. opposite for 'autoLoad' state)
+    Load,
+    AutoLoad,
+    UnLoad,
+    MmuLoad,
+    MmuUnLoad,
+    MmuEject,
+    MmuCut,
+};
 
-bool force_selftest_if_fw_version()
+extern FilamentAction eFilamentAction;
+extern bool bFilamentFirstRun;
+extern bool bFilamentPreheatState;
+extern bool bFilamentAction;
+void mFilamentItem(uint16_t nTemp,uint16_t nTempBed);
+void mFilamentItemForce();
+void mFilamentMenu();
+void unload_filament();
+
+void stack_error();
+void lcd_printer_connected();
+void lcd_ping();
+
+void lcd_calibrate_extruder();
+void lcd_farm_sdcard_menu();
+
+//void getFileDescription(char *name, char *description);
+
+void lcd_farm_sdcard_menu_w();
+//void get_description();
+
+void lcd_wait_for_heater();
+void lcd_wait_for_cool_down();
+void lcd_extr_cal_reset();
+
+void lcd_temp_cal_show_result(bool result);
+bool lcd_wait_for_pinda(float temp);
+
+
+void bowden_menu();
+char reset_menu();
+uint8_t choose_menu_P(const char *header, const char *item, const char *last_item = nullptr);
+
+void lcd_pinda_calibration_menu();
+void lcd_calibrate_pinda();
+void lcd_temp_calibration_set();
+
+void display_loading();
+
+#if !SDSORT_USES_RAM
+void lcd_set_degree();
+void lcd_set_progress();
+#endif
+
+void lcd_language();
+
+void lcd_wizard();
+bool lcd_autoDepleteEnabled();
+
+//! @brief Wizard state
+enum class WizState : uint8_t
 {
-	//if fw version used before flashing new firmware (fw version currently stored in eeprom) is lower then 3.1.2-RC2, function returns true to force selftest
+    Run,            //!< run wizard? Entry point.
+    Restore,        //!< restore calibration status
+    Selftest,
+    Xyz,            //!< xyz calibration
+    Z,              //!< z calibration
+    IsFil,          //!< Is filament loaded? Entry point for 1st layer calibration
+    PreheatPla,     //!< waiting for preheat nozzle for PLA
+    Preheat,        //!< Preheat for any material
+    Unload,         //!< Unload filament
+    LoadFil,        //!< Load filament
+    IsPla,          //!< Is PLA filament?
+    Lay1Cal,        //!< First layer calibration
+    RepeatLay1Cal,  //!< Repeat first layer calibration?
+    Finish,         //!< Deactivate wizard
+};
 
-	uint16_t ver_eeprom[4];
-	uint16_t ver_with_calibration[4] = {3, 1, 2, 4}; //hardcoded 3.1.2-RC2 version
-	bool force_selftest = false;
+void lcd_wizard(WizState state);
 
-	ver_eeprom[0] = eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MAJOR);
-	ver_eeprom[1] = eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MINOR);
-	ver_eeprom[2] = eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_REVISION);
-	ver_eeprom[3] = eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_FLAVOR);
-
-	for (uint8_t i = 0; i < 4; ++i) {
-		if (ver_with_calibration[i] > ver_eeprom[i]) {
-			force_selftest = true;
-			break;
-		}
-		else if (ver_with_calibration[i] < ver_eeprom[i])
-			break;
-	}
-
-	//force selftest also in case that version used before flashing new firmware was 3.2.0-RC1
-	if ((ver_eeprom[0] == 3) && (ver_eeprom[1] == 2) && (ver_eeprom[2] == 0) && (ver_eeprom[3] == 3)) force_selftest = true;
-	
-	return force_selftest;
-}
-
-bool show_upgrade_dialog_if_version_newer(const char *version_string)
-{
-    uint16_t ver_gcode[4], ver_current[4];
-    if (! parse_version(version_string, ver_gcode)) {
-//        SERIAL_PROTOCOLLNPGM("parse_version failed");
-        return false;
-    }
-    if (! parse_version_P(FW_VERSION_STR, ver_current)) {
-//        SERIAL_PROTOCOLLNPGM("parse_version_P failed");
-        return false; // this shall not happen
-    }
-//    SERIAL_PROTOCOLLNPGM("versions parsed");
-    bool upgrade = false;
-    for (uint8_t i = 0; i < 4; ++ i) {
-        if (ver_gcode[i] > ver_current[i]) {
-            upgrade = true;
-            break;
-        } else if (ver_gcode[i] < ver_current[i])
-            break;
-    }
-
-    if (upgrade) {
-        lcd_display_message_fullscreen_P(_i("New firmware version available:"));////MSG_NEW_FIRMWARE_AVAILABLE c=20 r=2
-        lcd_puts_at_P(0, 2, PSTR(""));
-        for (const char *c = version_string; ! is_whitespace_or_nl_or_eol(*c); ++ c)
-            lcd_putc(*c);
-        lcd_puts_at_P(0, 3, _i("Please upgrade."));////MSG_NEW_FIRMWARE_PLEASE_UPGRADE c=20
-        Sound_MakeCustom(50,1000,false);
-        delay_keep_alive(500);
-        Sound_MakeCustom(50,1000,false);
-        lcd_wait_for_click_delay(30);
-        lcd_update_enable(true);
-        lcd_clear();
-        lcd_update(0);
-    }
-
-    // Succeeded.
-    return true;
-}
-
-void update_current_firmware_version_to_eeprom()
-{
-    for (int8_t i = 0; i < FW_PRUSA3D_MAGIC_LEN; ++ i)
-        eeprom_update_byte((uint8_t*)(EEPROM_FIRMWARE_PRUSA_MAGIC+i), pgm_read_byte(FW_PRUSA3D_MAGIC_STR+i));
-    uint16_t ver_current[4];
-    if (parse_version_P(FW_VERSION_STR, ver_current)) {
-        eeprom_update_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MAJOR,    ver_current[0]);
-        eeprom_update_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MINOR,    ver_current[1]);
-        eeprom_update_word((uint16_t*)EEPROM_FIRMWARE_VERSION_REVISION, ver_current[2]);
-        // See FirmwareRevisionFlavorType for the definition of firmware flavors.
-        eeprom_update_word((uint16_t*)EEPROM_FIRMWARE_VERSION_FLAVOR,   ver_current[3]);
-    }
-}
-
-
-//-//
-#define MSG_PRINT_CHECKING_FAILED_TIMEOUT 30
-
-ClNozzleDiameter oNozzleDiameter=ClNozzleDiameter::_Diameter_400;
-ClCheckMode oCheckMode=ClCheckMode::_None;
-ClCheckModel oCheckModel=ClCheckModel::_None;
-ClCheckVersion oCheckVersion=ClCheckVersion::_None;
-ClCheckGcode oCheckGcode=ClCheckGcode::_None;
-
-void fCheckModeInit()
-{
-oCheckMode=(ClCheckMode)eeprom_read_byte((uint8_t*)EEPROM_CHECK_MODE);
-if(oCheckMode==ClCheckMode::_Undef)
-     {
-     oCheckMode=ClCheckMode::_Warn;
-     eeprom_update_byte((uint8_t*)EEPROM_CHECK_MODE,(uint8_t)oCheckMode);
-     }
-if(farm_mode)
-     oCheckMode=ClCheckMode::_Strict;
-oNozzleDiameter=(ClNozzleDiameter)eeprom_read_byte((uint8_t*)EEPROM_NOZZLE_DIAMETER);
-if((oNozzleDiameter==ClNozzleDiameter::_Diameter_Undef)&& !farm_mode)
-     {
-     oNozzleDiameter=ClNozzleDiameter::_Diameter_400;
-     eeprom_update_byte((uint8_t*)EEPROM_NOZZLE_DIAMETER,(uint8_t)oNozzleDiameter);
-     eeprom_update_word((uint16_t*)EEPROM_NOZZLE_DIAMETER_uM,400);
-     }
-oCheckModel=(ClCheckModel)eeprom_read_byte((uint8_t*)EEPROM_CHECK_MODEL);
-if(oCheckModel==ClCheckModel::_Undef)
-     {
-     oCheckModel=ClCheckModel::_Warn;
-     eeprom_update_byte((uint8_t*)EEPROM_CHECK_MODEL,(uint8_t)oCheckModel);
-     }
-oCheckVersion=(ClCheckVersion)eeprom_read_byte((uint8_t*)EEPROM_CHECK_VERSION);
-if(oCheckVersion==ClCheckVersion::_Undef)
-     {
-     oCheckVersion=ClCheckVersion::_Warn;
-     eeprom_update_byte((uint8_t*)EEPROM_CHECK_VERSION,(uint8_t)oCheckVersion);
-     }
-oCheckGcode=(ClCheckGcode)eeprom_read_byte((uint8_t*)EEPROM_CHECK_GCODE);
-if(oCheckGcode==ClCheckGcode::_Undef)
-     {
-     oCheckGcode=ClCheckGcode::_Warn;
-     eeprom_update_byte((uint8_t*)EEPROM_CHECK_GCODE,(uint8_t)oCheckGcode);
-     }
-}
-
-void nozzle_diameter_check(uint16_t nDiameter)
-{
-uint16_t nDiameter_um;
-
-if(oCheckMode==ClCheckMode::_None)
-     return;
-nDiameter_um=eeprom_read_word((uint16_t*)EEPROM_NOZZLE_DIAMETER_uM);
-if(nDiameter==nDiameter_um)
-     return;
-//SERIAL_ECHO_START;
-//SERIAL_ECHOLNPGM("Printer nozzle diameter differs from the G-code ...");
-//SERIAL_ECHOPGM("actual  : ");
-//SERIAL_ECHOLN((float)(nDiameter_um/1000.0));
-//SERIAL_ECHOPGM("expected: ");
-//SERIAL_ECHOLN((float)(nDiameter/1000.0));
-switch(oCheckMode)
-     {
-     case ClCheckMode::_Warn:
-//          lcd_show_fullscreen_message_and_wait_P(_i("Printer nozzle diameter differs from the G-code. Continue?"));
-lcd_display_message_fullscreen_P(_i("Printer nozzle diameter differs from the G-code. Continue?"));
-lcd_wait_for_click_delay(MSG_PRINT_CHECKING_FAILED_TIMEOUT);
-//???custom_message_type=CUSTOM_MSG_TYPE_STATUS; // display / status-line recovery
-lcd_update_enable(true);           // display / status-line recovery
-          break;
-     case ClCheckMode::_Strict:
-          lcd_show_fullscreen_message_and_wait_P(_i("Printer nozzle diameter differs from the G-code. Please check the value in settings. Print cancelled."));
-          lcd_print_stop();
-          break;
-     case ClCheckMode::_None:
-     case ClCheckMode::_Undef:
-          break;
-     }
-if(!farm_mode)
-     {
-     bSettings=false;                             // flag ('fake parameter') for 'lcd_hw_setup_menu()' function
-     menu_submenu(lcd_hw_setup_menu);
-     }
-}
-
-void printer_model_check(uint16_t nPrinterModel)
-{
-if(oCheckModel==ClCheckModel::_None)
-     return;
-if(nPrinterModel==nPrinterType)
-     return;
-//SERIAL_ECHO_START;
-//SERIAL_ECHOLNPGM("Printer model differs from the G-code ...");
-//SERIAL_ECHOPGM("actual  : ");
-//SERIAL_ECHOLN(nPrinterType);
-//SERIAL_ECHOPGM("expected: ");
-//SERIAL_ECHOLN(nPrinterModel);
-switch(oCheckModel)
-     {
-     case ClCheckModel::_Warn:
-//          lcd_show_fullscreen_message_and_wait_P(_i("Printer model differs from the G-code. Continue?"));
-lcd_display_message_fullscreen_P(_i("G-code sliced for a different printer type. Continue?"));
-lcd_wait_for_click_delay(MSG_PRINT_CHECKING_FAILED_TIMEOUT);
-//???custom_message_type=CUSTOM_MSG_TYPE_STATUS; // display / status-line recovery
-lcd_update_enable(true);           // display / status-line recovery
-          break;
-     case ClCheckModel::_Strict:
-          lcd_show_fullscreen_message_and_wait_P(_i("G-code sliced for a different printer type. Please re-slice the model again. Print cancelled."));
-          lcd_print_stop();
-          break;
-     case ClCheckModel::_None:
-     case ClCheckModel::_Undef:
-          break;
-     }
-}
-
-uint8_t mCompareValue(uint16_t nX,uint16_t nY)
-{
-if(nX>nY)
-     return((uint8_t)ClCompareValue::_Greater);
-if(nX<nY)
-     return((uint8_t)ClCompareValue::_Less);
-return((uint8_t)ClCompareValue::_Equal);
-}
-
-void fw_version_check(const char *pVersion)
-{
-uint16_t aVersion[4];
-uint8_t nCompareValueResult;
-
-if(oCheckVersion==ClCheckVersion::_None)
-     return;
-parse_version(pVersion,aVersion);
-nCompareValueResult=mCompareValue(aVersion[0],eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MAJOR))<<6;
-nCompareValueResult+=mCompareValue(aVersion[1],eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_MINOR))<<4;
-nCompareValueResult+=mCompareValue(aVersion[2],eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_REVISION))<<2;
-nCompareValueResult+=mCompareValue(aVersion[3],eeprom_read_word((uint16_t*)EEPROM_FIRMWARE_VERSION_FLAVOR));
-if(nCompareValueResult==COMPARE_VALUE_EQUAL)
-     return;
-if((nCompareValueResult<COMPARE_VALUE_EQUAL)&&oCheckVersion==ClCheckVersion::_Warn)
-     return;
-//SERIAL_ECHO_START;
-//SERIAL_ECHOLNPGM("Printer FW version differs from the G-code ...");
-//SERIAL_ECHOPGM("actual  : ");
-//SERIAL_ECHOLN(FW_VERSION);
-//SERIAL_ECHOPGM("expected: ");
-//SERIAL_ECHOLN(pVersion);
-switch(oCheckVersion)
-     {
-     case ClCheckVersion::_Warn:
-//          lcd_show_fullscreen_message_and_wait_P(_i("Printer FW version differs from the G-code. Continue?"));
-lcd_display_message_fullscreen_P(_i("G-code sliced for a newer firmware. Continue?"));
-lcd_wait_for_click_delay(MSG_PRINT_CHECKING_FAILED_TIMEOUT);
-//???custom_message_type=CUSTOM_MSG_TYPE_STATUS; // display / status-line recovery
-lcd_update_enable(true);           // display / status-line recovery
-          break;
-     case ClCheckVersion::_Strict:
-          lcd_show_fullscreen_message_and_wait_P(_i("G-code sliced for a newer firmware. Please update the firmware. Print cancelled."));
-          lcd_print_stop();
-          break;
-     case ClCheckVersion::_None:
-     case ClCheckVersion::_Undef:
-          break;
-     }
-}
-
-void gcode_level_check(uint16_t nGcodeLevel)
-{
-if(oCheckGcode==ClCheckGcode::_None)
-     return;
-if(nGcodeLevel==(uint16_t)GCODE_LEVEL)
-     return;
-if((nGcodeLevel<(uint16_t)GCODE_LEVEL)&&(oCheckGcode==ClCheckGcode::_Warn))
-     return;
-//SERIAL_ECHO_START;
-//SERIAL_ECHOLNPGM("Printer G-code level differs from the G-code ...");
-//SERIAL_ECHOPGM("actual  : ");
-//SERIAL_ECHOLN(GCODE_LEVEL);
-//SERIAL_ECHOPGM("expected: ");
-//SERIAL_ECHOLN(nGcodeLevel);
-switch(oCheckGcode)
-     {
-     case ClCheckGcode::_Warn:
-//          lcd_show_fullscreen_message_and_wait_P(_i("Printer G-code level differs from the G-code. Continue?"));
-lcd_display_message_fullscreen_P(_i("G-code sliced for a different level. Continue?"));
-lcd_wait_for_click_delay(MSG_PRINT_CHECKING_FAILED_TIMEOUT);
-//???custom_message_type=CUSTOM_MSG_TYPE_STATUS; // display / status-line recovery
-lcd_update_enable(true);           // display / status-line recovery
-          break;
-     case ClCheckGcode::_Strict:
-          lcd_show_fullscreen_message_and_wait_P(_i("G-code sliced for a different level. Please re-slice the model again. Print cancelled."));
-          lcd_print_stop();
-          break;
-     case ClCheckGcode::_None:
-     case ClCheckGcode::_Undef:
-          break;
-     }
-}
-
-//-// -> cmdqueue ???
-#define PRINTER_NAME_LENGTH ((sizeof(PRINTER_MMU_NAME)>sizeof(PRINTER_NAME))?(sizeof(PRINTER_MMU_NAME)-1):(sizeof(PRINTER_NAME)-1))
-#define GCODE_DELIMITER '"'
-#define ELLIPSIS "..."
-
-char* code_string(char* pStr,size_t* nLength)
-{
-char* pStrBegin;
-char* pStrEnd;
-
-pStrBegin=strchr(pStr,GCODE_DELIMITER);
-if(!pStrBegin)
-     return(NULL);
-pStrBegin++;
-pStrEnd=strchr(pStrBegin,GCODE_DELIMITER);
-if(!pStrEnd)
-     return(NULL);
-*nLength=pStrEnd-pStrBegin;
-return(pStrBegin);
-}
-
-void printer_smodel_check(char* pStrPos)
-{
-char* pResult;
-size_t nLength,nPrinterNameLength;
-bool bCheckOK;
-char sPrinterName[PRINTER_NAME_LENGTH+sizeof(ELLIPSIS)-1+1]="";
-
-nPrinterNameLength=strlen_P(::sPrinterName);
-pResult=code_string(pStrPos,&nLength);
-if(pResult!=NULL)
-     {
-     strlcpy(sPrinterName,pResult,min(nPrinterNameLength,nLength)+1);
-     if(nLength>nPrinterNameLength)
-          strcat(sPrinterName,ELLIPSIS);
-     bCheckOK=(nLength==nPrinterNameLength);
-     if(bCheckOK&&(!strncasecmp_P(pResult,::sPrinterName,nLength))) // i.e. string compare execute only if lengths are same
-          return;
-     }
-//SERIAL_ECHO_START;
-//SERIAL_ECHOLNPGM("Printer model differs from the G-code ...");
-//SERIAL_ECHOPGM("actual  : \"");
-//serialprintPGM(::sPrinterName);
-//SERIAL_ECHOLNPGM("\"");
-//SERIAL_ECHOPGM("expected: \"");
-////SERIAL_ECHO(sPrinterName);
-//SERIAL_ECHOLNPGM("\"");
-switch(oCheckModel)
-     {
-     case ClCheckModel::_Warn:
-//          lcd_show_fullscreen_message_and_wait_P(_i("Printer model differs from the G-code. Continue?"));
-lcd_display_message_fullscreen_P(_i("G-code sliced for a different printer type. Continue?"));
-lcd_wait_for_click_delay(MSG_PRINT_CHECKING_FAILED_TIMEOUT);
-//???custom_message_type=CUSTOM_MSG_TYPE_STATUS; // display / status-line recovery
-lcd_update_enable(true);           // display / status-line recovery
-          break;
-     case ClCheckModel::_Strict:
-          lcd_show_fullscreen_message_and_wait_P(_i("G-code sliced for a different printer type. Please re-slice the model again. Print cancelled."));
-          lcd_print_stop();
-          break;
-     case ClCheckModel::_None:
-     case ClCheckModel::_Undef:
-          break;
-     }
-}
-
-void fSetMmuMode(bool bMMu)
-{
-if(bMMu)
-     {
-     nPrinterType=pgm_read_word(&_nPrinterMmuType);
-     sPrinterName=_sPrinterMmuName;
-     }
-else {
-     nPrinterType=pgm_read_word(&_nPrinterType);
-     sPrinterName=_sPrinterName;
-     }
-}
+#endif //ULTRALCD_H

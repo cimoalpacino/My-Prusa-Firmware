@@ -1,41 +1,45 @@
-//xyzcal.h - xyz calibration with image processing
-#ifndef _XYZCAL_H
-#define _XYZCAL_H
+//w25x20cl.h
+#ifndef _W25X20CL_H
+#define _W25X20CL_H
 
 #include <inttypes.h>
+#include "config.h"
+#include "spi.h"
+
+/*RAMPS*/
+#if MOTHERBOARD != BOARD_RAMPS_14_EFB
+#define W25X20CL_STATUS_BUSY   0x01
+#define W25X20CL_STATUS_WEL    0x02
+#define W25X20CL_STATUS_BP0    0x04
+#define W25X20CL_STATUS_BP1    0x08
+#define W25X20CL_STATUS_TB     0x20
+#define W25X20CL_STATUS_SRP    0x80
+
+#define W25X20CL_SPI_ENTER() spi_setup(W25X20CL_SPCR, W25X20CL_SPSR)
+#endif /*RAMPS*/
+
+#if defined(__cplusplus)
+extern "C" {
+#endif //defined(__cplusplus)
 
 
-extern void xyzcal_meassure_enter(void);
+extern int8_t w25x20cl_init(void);
+extern void w25x20cl_enable_wr(void);
+extern void w25x20cl_disable_wr(void);
+extern uint8_t w25x20cl_rd_status_reg(void);
+extern void w25x20cl_wr_status_reg(uint8_t val);
+extern void w25x20cl_rd_data(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_page_program(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_page_program_P(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_sector_erase(uint32_t addr);
+extern void w25x20cl_block32_erase(uint32_t addr);
+extern void w25x20cl_block64_erase(uint32_t addr);
+extern void w25x20cl_chip_erase(void);
+extern void w25x20cl_page_program(uint32_t addr, uint8_t* data, uint16_t cnt);
+extern void w25x20cl_rd_uid(uint8_t* uid);
+extern void w25x20cl_wait_busy(void);
 
-extern void xyzcal_meassure_leave(void);
-
-extern bool xyzcal_lineXYZ_to(int16_t x, int16_t y, int16_t z, uint16_t delay_us, int8_t check_pinda);
-
-extern bool xyzcal_spiral2(int16_t cx, int16_t cy, int16_t z0, int16_t dz, int16_t radius, int16_t rotation, uint16_t delay_us, int8_t check_pinda, uint16_t* pad);
-
-extern bool xyzcal_spiral8(int16_t cx, int16_t cy, int16_t z0, int16_t dz, int16_t radius, uint16_t delay_us, int8_t check_pinda, uint16_t* pad);
-
-//extern int8_t xyzcal_meassure_pinda_hysterezis(int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t samples);
-
-extern void xyzcal_scan_pixels_32x32(int16_t cx, int16_t cy, int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t* pixels);
-
-extern void xyzcal_histo_pixels_32x32(uint8_t* pixels, uint16_t* histo);
-
-extern void xyzcal_adjust_pixels(uint8_t* pixels, uint16_t* histo);
-
-extern int16_t xyzcal_match_pattern_12x12_in_32x32(uint16_t* pattern, uint8_t* pixels, uint8_t x, uint8_t y);
-
-extern int16_t xyzcal_find_pattern_12x12_in_32x32(uint8_t* pixels, uint16_t* pattern, uint8_t* pc, uint8_t* pr);
-
-extern int8_t xyzcal_find_point_center2(uint16_t delay_us);
-
-//extern int8_t xyzcal_find_point_center(int16_t x0, int16_t y0, int16_t z0, int16_t min_z, int16_t max_z, uint16_t delay_us, uint8_t turns);
-
-extern bool xyzcal_searchZ(void);
-
-extern bool xyzcal_scan_and_process(void);
-
-extern bool xyzcal_find_bed_induction_sensor_point_xy(void);
-
-
-#endif //_XYZCAL_H
+#if defined(__cplusplus)
+}
+#endif //defined(__cplusplus)
+#endif //_W25X20CL_H
